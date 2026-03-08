@@ -1,3 +1,11 @@
+//
+//  ContentView.swift
+//  Walletify
+//
+//  Created by Eliott Wantz on 07-03-2026.
+//  SPDX-License-Identifier: MIT
+//
+
 import AVFoundation
 import PassKit
 import SwiftUI

@@ -1,3 +1,11 @@
+//
+//  BarcodeScannerView.swift
+//  Walletify
+//
+//  Created by Eliott Wantz on 08-03-2026.
+//  SPDX-License-Identifier: MIT
+//
+
 import AVFoundation
 import SwiftUI
 
