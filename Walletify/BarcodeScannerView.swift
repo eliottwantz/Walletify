@@ -33,6 +33,55 @@ struct BarcodeScannerView: UIViewControllerRepresentable {
 final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate,
   AVCapturePhotoCaptureDelegate
 {
+  private static let preferredMetadataObjectTypes: [AVMetadataObject.ObjectType] = [
+    .qr,
+    .microQR,
+    .aztec,
+    .pdf417,
+    .microPDF417,
+    .dataMatrix,
+    .ean8,
+    .ean13,
+    .upce,
+    .code39,
+    .code39Mod43,
+    .code93,
+    .code128,
+    .interleaved2of5,
+    .itf14,
+    .codabar,
+    .gs1DataBar,
+    .gs1DataBarExpanded,
+    .gs1DataBarLimited,
+  ]
+
+  private static let supportedVisionSymbologies: [VNBarcodeSymbology] = [
+    .qr,
+    .microQR,
+    .aztec,
+    .pdf417,
+    .microPDF417,
+    .dataMatrix,
+    .ean8,
+    .ean13,
+    .upce,
+    .code39,
+    .code39Checksum,
+    .code39FullASCII,
+    .code39FullASCIIChecksum,
+    .code93,
+    .code93i,
+    .code128,
+    .i2of5,
+    .i2of5Checksum,
+    .itf14,
+    .codabar,
+    .gs1DataBar,
+    .gs1DataBarExpanded,
+    .gs1DataBarLimited,
+    .msiPlessey,
+  ]
+
   var onCodeFound: ((String) -> Void)?
   var onCancel: (() -> Void)?
 
@@ -47,6 +96,13 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
   private var previewLayer: AVCaptureVideoPreviewLayer?
   private var isSessionConfigured = false
   private var isProcessingCapture = false
+
+  private static func supportedMetadataObjectTypes(
+    from availableTypes: [AVMetadataObject.ObjectType]
+  ) -> [AVMetadataObject.ObjectType] {
+    let availableTypes = Set(availableTypes)
+    return preferredMetadataObjectTypes.filter(availableTypes.contains)
+  }
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -186,8 +242,11 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     session.addOutput(metadataOutput)
     session.addOutput(photoOutput)
     metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
-    metadataOutput.metadataObjectTypes = [.qr, .ean8, .ean13, .code128, .pdf417, .aztec]
     session.commitConfiguration()
+
+    metadataOutput.metadataObjectTypes = Self.supportedMetadataObjectTypes(
+      from: metadataOutput.availableMetadataObjectTypes
+    )
     isSessionConfigured = true
 
     let previewLayer = AVCaptureVideoPreviewLayer(session: session)
@@ -276,22 +335,24 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
   }
 
   private static func detectBarcodeResult(in imageData: Data) async -> BarcodeDetectionResult {
-    await withCheckedContinuation { continuation in
+    let supportedVisionSymbologies = Self.supportedVisionSymbologies
+
+    return await withCheckedContinuation { continuation in
       DispatchQueue.global(qos: .userInitiated).async {
         let request = VNDetectBarcodesRequest()
-        request.symbologies = [.qr, .ean8, .ean13, .code128, .pdf417, .aztec]
+        request.symbologies = supportedVisionSymbologies
 
         do {
           try VNImageRequestHandler(data: imageData).perform([request])
 
           let observations = request.results ?? []
           if let value = observations.compactMap(\.payloadStringValue).first {
-            continuation.resume(returning: .code(value))
+            continuation.resume(returning: BarcodeDetectionResult.code(value))
           } else {
-            continuation.resume(returning: .notFound)
+            continuation.resume(returning: BarcodeDetectionResult.notFound)
           }
         } catch {
-          continuation.resume(returning: .failure(error.localizedDescription))
+          continuation.resume(returning: BarcodeDetectionResult.failure(error.localizedDescription))
         }
       }
     }
@@ -303,8 +364,9 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     from _: AVCaptureConnection
   ) {
     guard
-      let metadataObject = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
-      let value = metadataObject.stringValue
+      let value = metadataObjects
+        .compactMap({ ($0 as? AVMetadataMachineReadableCodeObject)?.stringValue })
+        .first
     else { return }
 
     Task { @MainActor [weak self] in
