@@ -7,7 +7,7 @@ struct ContentView: View {
   @State private var scannedCode: String?
   @State private var isScannerPresented = false
   @State private var isLoading = false
-  @State private var addPass: PKPass?
+  @State private var addPass: WalletPassItem?
   @State private var errorMessage: String?
 
   private let passService = WalletPassService()
@@ -58,7 +58,7 @@ struct ContentView: View {
         }
       }
       .sheet(item: $addPass) { pass in
-        AddToWalletSheet(pass: pass)
+        AddToWalletSheet(pass: pass.pass)
       }
       .alert("Could not save to Wallet", isPresented: .constant(errorMessage != nil), actions: {
         Button("OK") { errorMessage = nil }
@@ -80,12 +80,17 @@ struct ContentView: View {
 
     do {
       let pass = try await passService.createPass(companyName: companyName, codeValue: scannedCode)
-      addPass = pass
+      addPass = WalletPassItem(pass: pass)
       errorMessage = nil
     } catch {
       errorMessage = error.localizedDescription
     }
   }
+}
+
+private struct WalletPassItem: Identifiable {
+  let id = UUID()
+  let pass: PKPass
 }
 
 #Preview {
