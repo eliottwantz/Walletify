@@ -10,22 +10,27 @@ import Foundation
 import PassKit
 
 struct WalletPassService {
-  private let endpoint = URL(string: "https://walletify-pass-service.example.com/pass")!
+  private let endpoint = URL(string: "https://local-walletify.develiott.com/pass")!
 
   func createPass(companyName: String, codeValue: String) async throws -> PKPass {
-    var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
-    components?.queryItems = [
-      URLQueryItem(name: "company", value: companyName),
-      URLQueryItem(name: "code", value: codeValue),
-    ]
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/vnd.apple.pkpass", forHTTPHeaderField: "Accept")
+    request.httpBody = try JSONEncoder().encode(
+      CreatePassRequest(company: companyName, code: codeValue)
+    )
 
-    guard let url = components?.url else {
-      throw WalletPassError.invalidEndpoint
+    let (data, response) = try await URLSession.shared.data(for: request)
+
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw WalletPassError.passGenerationFailed
     }
 
-    let (data, response) = try await URLSession.shared.data(from: url)
-
-    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+    guard httpResponse.statusCode == 200 else {
+      if let serviceError = try? JSONDecoder().decode(PassServiceErrorResponse.self, from: data) {
+        throw WalletPassError.serviceError(serviceError.error)
+      }
       throw WalletPassError.passGenerationFailed
     }
 
@@ -41,6 +46,7 @@ enum WalletPassError: LocalizedError {
   case invalidEndpoint
   case passGenerationFailed
   case invalidPassData
+  case serviceError(String)
 
   var errorDescription: String? {
     switch self {
@@ -50,6 +56,17 @@ enum WalletPassError: LocalizedError {
       "The pass service could not generate a Wallet pass."
     case .invalidPassData:
       "Wallet pass data is invalid."
+    case let .serviceError(message):
+      message
     }
   }
+}
+
+private struct CreatePassRequest: Encodable {
+  let company: String
+  let code: String
+}
+
+private struct PassServiceErrorResponse: Decodable {
+  let error: String
 }

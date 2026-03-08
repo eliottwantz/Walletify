@@ -59,11 +59,16 @@ struct ContentView: View {
         }
       }
       .sheet(isPresented: $isScannerPresented) {
-        BarcodeScannerView { code in
-          scannedCode = code
-          isScannerPresented = false
-          errorMessage = nil
-        }
+        BarcodeScannerView(
+          onCodeFound: { code in
+            scannedCode = code
+            isScannerPresented = false
+            errorMessage = nil
+          },
+          onCancel: {
+            isScannerPresented = false
+          }
+        )
       }
       .sheet(item: $addPass) { pass in
         AddToWalletSheet(pass: pass.pass)
