@@ -3,6 +3,9 @@ import { PKPass } from "passkit-generator";
 import { z } from "zod";
 
 const APPLE_PKPASS_MIME = "application/vnd.apple.pkpass";
+const FAVICON_FETCH_TIMEOUT_MS = 5_000;
+const FAVICON_SIZE = 256;
+const FAVICON_SERVICE_URL = "https://www.google.com/s2/favicons";
 const RUNTIME_ROOT = process.cwd();
 const PASS_ASSET_CANDIDATES = [
 	`${RUNTIME_ROOT}/src/assets/pass`,
@@ -38,17 +41,14 @@ type RuntimeConfig = {
 class ConfigError extends Error {}
 class RequestError extends Error {}
 
-const optionalTrimmedString = z.preprocess(
-	(value) => {
-		if (typeof value !== "string") {
-			return value;
-		}
+const optionalTrimmedString = z.preprocess((value) => {
+	if (typeof value !== "string") {
+		return value;
+	}
 
-		const trimmed = value.trim();
-		return trimmed === "" ? undefined : trimmed;
-	},
-	z.string().optional(),
-);
+	const trimmed = value.trim();
+	return trimmed === "" ? undefined : trimmed;
+}, z.string().optional());
 
 const requiredTrimmedString = (message: string) =>
 	z.preprocess(
@@ -59,6 +59,7 @@ const requiredTrimmedString = (message: string) =>
 const passRequestSchema = z.object({
 	code: requiredTrimmedString("Missing required 'code' value."),
 	company: requiredTrimmedString("Missing required 'company' value."),
+	website: optionalTrimmedString,
 });
 
 type PassRequest = z.infer<typeof passRequestSchema>;
@@ -77,17 +78,14 @@ const runtimeEnvSchema = z.object({
 	PASS_TYPE_IDENTIFIER: requiredTrimmedString(
 		"Missing required environment variable PASS_TYPE_IDENTIFIER.",
 	),
-	PORT: z.preprocess(
-		(value) => {
-			if (typeof value !== "string") {
-				return value;
-			}
+	PORT: z.preprocess((value) => {
+		if (typeof value !== "string") {
+			return value;
+		}
 
-			const trimmed = value.trim();
-			return trimmed === "" ? undefined : Number(trimmed);
-		},
-		z.number().int().min(1).max(65535).default(DEFAULT_PORT),
-	),
+		const trimmed = value.trim();
+		return trimmed === "" ? undefined : Number(trimmed);
+	}, z.number().int().min(1).max(65535).default(DEFAULT_PORT)),
 	SIGNER_CERT_BASE64: optionalTrimmedString,
 	SIGNER_CERT_PATH: optionalTrimmedString,
 	SIGNER_CERT_PEM: optionalTrimmedString,
@@ -116,6 +114,7 @@ type CertificateEnvKey =
 	| "WWDR_CERT_PEM";
 
 const runtimeEnv = parseRuntimeEnv(Bun.env);
+const runtimeConfig = await getRuntimeConfig();
 
 let runtimeConfigPromise: Promise<RuntimeConfig> | undefined;
 
@@ -132,6 +131,7 @@ const app = new Elysia()
 			{
 				company: query.company,
 				code: query.code,
+				website: query.website,
 			},
 			set,
 		);
@@ -203,27 +203,24 @@ function parsePassRequest(payload: unknown): PassRequest {
 async function buildPassBuffer({
 	company,
 	code,
+	website,
 }: PassRequest): Promise<Buffer> {
-	const config = await getRuntimeConfig();
-	const serialNumber = buildSerialNumber({ company, code });
+	const serialNumber = buildSerialNumber({ company, code, website });
 	const organizationName = "Walletify";
+	const assets = await buildPassAssets(runtimeConfig.assets, website);
 
-	const pass = new PKPass(
-		config.assets,
-		config.certificates,
-		{
-			backgroundColor: config.colors.background,
-			description: `${company} pass`,
-			formatVersion: 1,
-			foregroundColor: config.colors.foreground,
-			labelColor: config.colors.label,
-			logoText: `Generated with ${organizationName}`,
-			organizationName,
-			passTypeIdentifier: config.passTypeIdentifier,
-			serialNumber,
-			teamIdentifier: config.teamIdentifier,
-		},
-	);
+	const pass = new PKPass(assets, runtimeConfig.certificates, {
+		backgroundColor: runtimeConfig.colors.background,
+		description: `${company} pass`,
+		formatVersion: 1,
+		foregroundColor: runtimeConfig.colors.foreground,
+		labelColor: runtimeConfig.colors.label,
+		logoText: `Generated with ${organizationName}`,
+		organizationName,
+		passTypeIdentifier: runtimeConfig.passTypeIdentifier,
+		serialNumber,
+		teamIdentifier: runtimeConfig.teamIdentifier,
+	});
 
 	pass.type = "generic";
 	pass.primaryFields.push({
@@ -251,6 +248,13 @@ async function buildPassBuffer({
 		label: "Scanned value",
 		value: code,
 	});
+	if (website) {
+		pass.backFields.push({
+			key: "website",
+			label: "Website",
+			value: normalizeWebsiteURL(website).toString(),
+		});
+	}
 	pass.backFields.push({
 		key: "walletifyNotice",
 		label: "Notice",
@@ -262,10 +266,135 @@ async function buildPassBuffer({
 	return pass.getAsBuffer();
 }
 
-function buildSerialNumber({ company, code }: PassRequest): string {
+function buildSerialNumber({ company, code, website }: PassRequest): string {
 	return new Bun.CryptoHasher("sha256")
-		.update(`${company}\n${code}`)
+		.update(`${company}\n${code}\n${normalizeWebsiteForSerialNumber(website)}`)
 		.digest("hex");
+}
+
+async function buildPassAssets(
+	defaultAssets: Record<string, Buffer>,
+	website?: string,
+): Promise<Record<string, Buffer>> {
+	if (!website) {
+		return defaultAssets;
+	}
+
+	const faviconAssets = await fetchFaviconAssets(website);
+	if (!faviconAssets) {
+		return withoutThumbnailAssets(defaultAssets);
+	}
+
+	return {
+		...defaultAssets,
+		...faviconAssets,
+	};
+}
+
+function withoutThumbnailAssets(
+	assets: Record<string, Buffer>,
+): Record<string, Buffer> {
+	const {
+		"thumbnail.png": _thumbnail,
+		"thumbnail@2x.png": _thumbnail2x,
+		"thumbnail@3x.png": _thumbnail3x,
+		...assetsWithoutThumbnail
+	} = assets;
+
+	return assetsWithoutThumbnail;
+}
+
+async function fetchFaviconAssets(
+	website: string,
+): Promise<Record<string, Buffer> | undefined> {
+	const normalizedWebsite = normalizeWebsiteURL(website);
+	const faviconURL = new URL(FAVICON_SERVICE_URL);
+	faviconURL.searchParams.set("domain_url", normalizedWebsite.origin);
+	faviconURL.searchParams.set("sz", String(FAVICON_SIZE));
+
+	const controller = new AbortController();
+	const timeout = setTimeout(
+		() => controller.abort(),
+		FAVICON_FETCH_TIMEOUT_MS,
+	);
+
+	try {
+		const response = await fetch(faviconURL, {
+			headers: {
+				"user-agent": "Walletify/1.0",
+			},
+			signal: controller.signal,
+		});
+
+		if (!response.ok) {
+			console.warn(
+				`Favicon lookup failed for ${normalizedWebsite.origin}: ${response.status}`,
+			);
+			return undefined;
+		}
+
+		const contentType = response.headers.get("content-type") ?? "";
+		if (!contentType.startsWith("image/")) {
+			console.warn(
+				`Favicon lookup returned unsupported content type for ${normalizedWebsite.origin}: ${contentType}`,
+			);
+			return undefined;
+		}
+
+		const arrayBuffer = await response.arrayBuffer();
+		if (arrayBuffer.byteLength === 0) {
+			return undefined;
+		}
+
+		const icon = Buffer.from(arrayBuffer);
+		return {
+			"thumbnail.png": icon,
+			"thumbnail@2x.png": icon,
+			"thumbnail@3x.png": icon,
+		};
+	} catch (error) {
+		console.warn(
+			`Favicon lookup failed for ${normalizedWebsite.origin}: ${stringifyError(error)}`,
+		);
+		return undefined;
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
+function normalizeWebsiteURL(value: string): URL {
+	const trimmedValue = value.trim();
+	const candidate = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmedValue)
+		? trimmedValue
+		: `https://${trimmedValue}`;
+	let websiteURL: URL;
+
+	try {
+		websiteURL = new URL(candidate);
+	} catch {
+		throw new RequestError(
+			"Invalid 'website' value. Provide a valid http or https URL.",
+		);
+	}
+
+	if (
+		!["http:", "https:"].includes(websiteURL.protocol) ||
+		!websiteURL.hostname
+	) {
+		throw new RequestError(
+			"Invalid 'website' value. Provide a valid http or https URL.",
+		);
+	}
+
+	return websiteURL;
+}
+
+function normalizeWebsiteForSerialNumber(website?: string): string {
+	if (!website) {
+		return "";
+	}
+
+	return normalizeWebsiteURL(website).origin;
 }
 
 function truncate(value: string, length: number): string {
@@ -277,8 +406,7 @@ function truncate(value: string, length: number): string {
 }
 
 async function getRuntimeConfig(): Promise<RuntimeConfig> {
-	runtimeConfigPromise ??= loadRuntimeConfig();
-	return runtimeConfigPromise;
+	return loadRuntimeConfig();
 }
 
 async function loadRuntimeConfig(): Promise<RuntimeConfig> {
@@ -293,36 +421,35 @@ async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 		wwdr,
 		signerCert,
 		signerKey,
-	] =
-		await Promise.all([
-			readRequiredFile(`${assetPath}/icon.png`),
-			readRequiredFile(`${assetPath}/icon@2x.png`),
-			readRequiredFile(`${assetPath}/icon@3x.png`),
-			readRequiredFile(`${assetPath}/thumbnail.png`),
-			readRequiredFile(`${assetPath}/thumbnail@2x.png`),
-			readRequiredFile(`${assetPath}/thumbnail@3x.png`),
-			readCertificate({
-				env: runtimeEnv,
-				base64Env: "WWDR_CERT_BASE64",
-				defaultPath: `${DEFAULT_CERTS_PATH}/wwdr.pem`,
-				pathEnv: "WWDR_CERT_PATH",
-				rawEnv: "WWDR_CERT_PEM",
-			}),
-			readCertificate({
-				env: runtimeEnv,
-				base64Env: "SIGNER_CERT_BASE64",
-				defaultPath: `${DEFAULT_CERTS_PATH}/signerCert.pem`,
-				pathEnv: "SIGNER_CERT_PATH",
-				rawEnv: "SIGNER_CERT_PEM",
-			}),
-			readCertificate({
-				env: runtimeEnv,
-				base64Env: "SIGNER_KEY_BASE64",
-				defaultPath: `${DEFAULT_CERTS_PATH}/signerKey.pem`,
-				pathEnv: "SIGNER_KEY_PATH",
-				rawEnv: "SIGNER_KEY_PEM",
-			}),
-		]);
+	] = await Promise.all([
+		readRequiredFile(`${assetPath}/icon.png`),
+		readRequiredFile(`${assetPath}/icon@2x.png`),
+		readRequiredFile(`${assetPath}/icon@3x.png`),
+		readRequiredFile(`${assetPath}/thumbnail.png`),
+		readRequiredFile(`${assetPath}/thumbnail@2x.png`),
+		readRequiredFile(`${assetPath}/thumbnail@3x.png`),
+		readCertificate({
+			env: runtimeEnv,
+			base64Env: "WWDR_CERT_BASE64",
+			defaultPath: `${DEFAULT_CERTS_PATH}/wwdr.pem`,
+			pathEnv: "WWDR_CERT_PATH",
+			rawEnv: "WWDR_CERT_PEM",
+		}),
+		readCertificate({
+			env: runtimeEnv,
+			base64Env: "SIGNER_CERT_BASE64",
+			defaultPath: `${DEFAULT_CERTS_PATH}/signerCert.pem`,
+			pathEnv: "SIGNER_CERT_PATH",
+			rawEnv: "SIGNER_CERT_PEM",
+		}),
+		readCertificate({
+			env: runtimeEnv,
+			base64Env: "SIGNER_KEY_BASE64",
+			defaultPath: `${DEFAULT_CERTS_PATH}/signerKey.pem`,
+			pathEnv: "SIGNER_KEY_PATH",
+			rawEnv: "SIGNER_KEY_PEM",
+		}),
+	]);
 
 	return {
 		assets: {

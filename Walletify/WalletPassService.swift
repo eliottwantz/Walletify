@@ -12,13 +12,18 @@ import PassKit
 struct WalletPassService {
   private let endpoint = URL(string: "https://local-walletify.develiott.com/pass")!
 
-  func createPass(companyName: String, codeValue: String) async throws -> PKPass {
+  func createPass(companyName: String, codeValue: String, websiteURL: String) async throws -> PKPass {
     var request = URLRequest(url: endpoint)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("application/vnd.apple.pkpass", forHTTPHeaderField: "Accept")
+    let trimmedWebsiteURL = websiteURL.trimmingCharacters(in: .whitespacesAndNewlines)
     request.httpBody = try JSONEncoder().encode(
-      CreatePassRequest(company: companyName, code: codeValue)
+      CreatePassRequest(
+        company: companyName,
+        code: codeValue,
+        website: trimmedWebsiteURL.isEmpty ? nil : trimmedWebsiteURL
+      )
     )
 
     let (data, response) = try await URLSession.shared.data(for: request)
@@ -65,6 +70,7 @@ enum WalletPassError: LocalizedError {
 private struct CreatePassRequest: Encodable {
   let company: String
   let code: String
+  let website: String?
 }
 
 private struct PassServiceErrorResponse: Decodable {

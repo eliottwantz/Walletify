@@ -12,6 +12,7 @@ import SwiftUI
 
 struct ContentView: View {
   @State private var companyName = ""
+  @State private var websiteURL = ""
   @State private var scannedCode: String?
   @State private var isScannerPresented = false
   @State private var isLoading = false
@@ -26,6 +27,11 @@ struct ContentView: View {
         Section("Card details") {
           TextField("Company name", text: $companyName)
             .textInputAutocapitalization(.words)
+
+          TextField("Website URL (optional)", text: $websiteURL)
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
 
           if let scannedCode {
             LabeledContent("Code", value: scannedCode)
@@ -98,7 +104,11 @@ struct ContentView: View {
     defer { isLoading = false }
 
     do {
-      let pass = try await passService.createPass(companyName: companyName, codeValue: scannedCode)
+      let pass = try await passService.createPass(
+        companyName: companyName,
+        codeValue: scannedCode,
+        websiteURL: websiteURL
+      )
       addPass = WalletPassItem(pass: pass)
       errorMessage = nil
     } catch {
