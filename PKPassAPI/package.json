@@ -1,0 +1,20 @@
+{
+	"name": "pk-pass-api",
+	"type": "module",
+	"scripts": {
+		"dev": "bun run --watch src/main.ts",
+		"start": "bun run src/main.ts",
+		"debug": "bun run --inspect-brk src/main.ts",
+		"build": "bun build --compile --target bun --minify --outfile server ./src/main.ts",
+		"typecheck": "tsc"
+	},
+	"devDependencies": {
+		"@types/bun": "1",
+		"typescript": "5"
+	},
+	"dependencies": {
+		"elysia": "1",
+		"passkit-generator": "^3.5.7",
+		"zod": "^4.3.6"
+	}
+}
