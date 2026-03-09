@@ -18,7 +18,7 @@ Minimal Bun/Elysia backend for generating signed Apple Wallet passes for Walleti
 }
 ```
 
-`website` is optional. When present, the API attempts to use the site's favicon as the pass thumbnail image. The bundled logo image remains unchanged. If no favicon is resolved, the pass is generated without a thumbnail image.
+`website` is optional. When present, the API attempts to use the site's favicon as the pass logo image. If no website is provided, or no favicon is resolved, the pass is generated without a logo image.
 
 Successful responses return a `.pkpass` payload with content type `application/vnd.apple.pkpass`.
 

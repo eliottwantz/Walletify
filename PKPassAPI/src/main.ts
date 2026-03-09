@@ -15,9 +15,9 @@ const PASS_ASSET_CANDIDATES = [
 const DEFAULT_CERTS_PATH = `${RUNTIME_ROOT}/certs`;
 const DEFAULT_PORT = 8080;
 const DEFAULT_PASS_COLORS = {
-	background: "rgb(17, 24, 39)",
-	foreground: "rgb(255, 255, 255)",
-	label: "rgb(156, 163, 175)",
+	background: "rgb(255, 255, 255)",
+	foreground: "rgb(60, 60, 60)",
+	label: "rgb(241, 192, 45)",
 } as const;
 
 type RuntimeConfig = {
@@ -204,7 +204,7 @@ async function buildPassBuffer({
 	website,
 }: PassRequest): Promise<Buffer> {
 	const serialNumber = buildSerialNumber({ company, code, website });
-	const organizationName = "Walletify";
+	const organizationName = runtimeConfig.organizationName;
 	const assets = await buildPassAssets(runtimeConfig.assets, website);
 	const previewCode = truncate(code, 32);
 
@@ -214,7 +214,7 @@ async function buildPassBuffer({
 		formatVersion: 1,
 		foregroundColor: runtimeConfig.colors.foreground,
 		labelColor: runtimeConfig.colors.label,
-		logoText: `Generated with ${organizationName}`,
+		logoText: company,
 		organizationName,
 		passTypeIdentifier: runtimeConfig.passTypeIdentifier,
 		serialNumber,
@@ -248,7 +248,7 @@ async function buildPassBuffer({
 		key: "walletifyNotice",
 		label: "Notice",
 		value:
-			"This is a user-generated Wallet pass created from a scanned QR or barcode.",
+			`This is a user-generated Wallet pass created from a scanned QR or barcode. Generated with ${organizationName}.`,
 	});
 	pass.setBarcodes(
 		{
@@ -286,32 +286,34 @@ async function buildPassAssets(
 	defaultAssets: Record<string, Buffer>,
 	website?: string,
 ): Promise<Record<string, Buffer>> {
+	const assetsWithoutLogo = withoutLogoAssets(defaultAssets);
+
 	if (!website) {
-		return defaultAssets;
+		return assetsWithoutLogo;
 	}
 
 	const faviconAssets = await fetchFaviconAssets(website);
 	if (!faviconAssets) {
-		return withoutThumbnailAssets(defaultAssets);
+		return assetsWithoutLogo;
 	}
 
 	return {
-		...defaultAssets,
+		...assetsWithoutLogo,
 		...faviconAssets,
 	};
 }
 
-function withoutThumbnailAssets(
+function withoutLogoAssets(
 	assets: Record<string, Buffer>,
 ): Record<string, Buffer> {
 	const {
-		"thumbnail.png": _thumbnail,
-		"thumbnail@2x.png": _thumbnail2x,
-		"thumbnail@3x.png": _thumbnail3x,
-		...assetsWithoutThumbnail
+		"logo.png": _logo,
+		"logo@2x.png": _logo2x,
+		"logo@3x.png": _logo3x,
+		...assetsWithoutLogo
 	} = assets;
 
-	return assetsWithoutThumbnail;
+	return assetsWithoutLogo;
 }
 
 async function fetchFaviconAssets(
@@ -358,9 +360,9 @@ async function fetchFaviconAssets(
 
 		const icon = Buffer.from(arrayBuffer);
 		return {
-			"thumbnail.png": icon,
-			"thumbnail@2x.png": icon,
-			"thumbnail@3x.png": icon,
+			"logo.png": icon,
+			"logo@2x.png": icon,
+			"logo@3x.png": icon,
 		};
 	} catch (error) {
 		console.warn(
@@ -421,23 +423,11 @@ async function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 	const assetPath = await resolvePassAssetPath();
-	const [
-		icon,
-		icon2x,
-		icon3x,
-		thumbnail,
-		thumbnail2x,
-		thumbnail3x,
-		wwdr,
-		signerCert,
-		signerKey,
-	] = await Promise.all([
+	const [icon, icon2x, icon3x, wwdr, signerCert, signerKey] =
+		await Promise.all([
 		readRequiredFile(`${assetPath}/icon.png`),
 		readRequiredFile(`${assetPath}/icon@2x.png`),
 		readRequiredFile(`${assetPath}/icon@3x.png`),
-		readRequiredFile(`${assetPath}/thumbnail.png`),
-		readRequiredFile(`${assetPath}/thumbnail@2x.png`),
-		readRequiredFile(`${assetPath}/thumbnail@3x.png`),
 		readCertificate({
 			env: runtimeEnv,
 			base64Env: "WWDR_CERT_BASE64",
@@ -466,9 +456,6 @@ async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 			"icon.png": icon,
 			"icon@2x.png": icon2x,
 			"icon@3x.png": icon3x,
-			"logo.png": thumbnail,
-			"logo@2x.png": thumbnail2x,
-			"logo@3x.png": thumbnail3x,
 		},
 		certificates: {
 			signerCert,
