@@ -58,7 +58,7 @@ struct ContentView: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
       }
-      .sheet(isPresented: $isScannerPresented) {
+      .fullScreenCover(isPresented: $isScannerPresented) {
         BarcodeScannerView(
           onCodeFound: { code in
             scannedCode = code
@@ -69,20 +69,26 @@ struct ContentView: View {
             isScannerPresented = false
           }
         )
+        .ignoresSafeArea()
       }
       .sheet(item: $addPass) { pass in
         AddToWalletSheet(pass: pass.pass)
+          .interactiveDismissDisabled()
       }
-      .alert("Could not save to Wallet", isPresented: .constant(errorMessage != nil), actions: {
-        Button("OK") { errorMessage = nil }
-      }, message: {
-        Text(errorMessage ?? "Unknown error")
-      })
+      .alert(
+        "Could not save to Wallet", isPresented: .constant(errorMessage != nil),
+        actions: {
+          Button("OK") { errorMessage = nil }
+        },
+        message: {
+          Text(errorMessage ?? "Unknown error")
+        })
     }
   }
 
   private var isSaveDisabled: Bool {
-    companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || scannedCode == nil || isLoading
+    companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || scannedCode == nil
+      || isLoading
   }
 
   @MainActor

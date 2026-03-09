@@ -213,11 +213,11 @@ async function buildPassBuffer({
 		config.certificates,
 		{
 			backgroundColor: config.colors.background,
-			description: `${company} card in Walletify`,
+			description: `${company} pass`,
 			formatVersion: 1,
 			foregroundColor: config.colors.foreground,
 			labelColor: config.colors.label,
-			logoText: organizationName,
+			logoText: `Generated with ${organizationName}`,
 			organizationName,
 			passTypeIdentifier: config.passTypeIdentifier,
 			serialNumber,
