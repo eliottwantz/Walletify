@@ -260,21 +260,25 @@ async function buildPassBuffer({
 			altText: previewCode,
 			format: "PKBarcodeFormatQR",
 			message: code,
+			messageEncoding: "iso-8859-1",
 		},
 		{
 			altText: previewCode,
 			format: "PKBarcodeFormatPDF417",
 			message: code,
+			messageEncoding: "iso-8859-1",
 		},
 		{
 			altText: previewCode,
 			format: "PKBarcodeFormatAztec",
 			message: code,
+			messageEncoding: "iso-8859-1",
 		},
 		{
 			altText: previewCode,
 			format: "PKBarcodeFormatCode128",
 			message: code,
+			messageEncoding: "iso-8859-1",
 		},
 	);
 

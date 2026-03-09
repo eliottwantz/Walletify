@@ -11,7 +11,7 @@ import SwiftUI
 import Vision
 
 private enum BarcodeDetectionResult: Sendable {
-  case code(String)
+  case code(value: String, detectedType: String)
   case notFound
   case failure(String)
 }
@@ -285,11 +285,12 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     onCancel?()
   }
 
-  private func handleDetectedCode(_ value: String) {
+  private func handleDetectedCode(_ value: String, detectedType: String) {
     if session.isRunning {
       session.stopRunning()
     }
 
+    print("Detected barcode type: \(detectedType)")
     onCodeFound?(value)
   }
 
@@ -324,8 +325,8 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
       self.captureButton.alpha = self.isSessionConfigured ? 1 : 0.5
 
       switch result {
-      case let .code(value):
-        self.handleDetectedCode(value)
+      case let .code(value, detectedType):
+        self.handleDetectedCode(value, detectedType: detectedType)
       case .notFound:
         self.statusLabel.text = "No QR or bar code found. Try again."
       case let .failure(message):
@@ -346,8 +347,15 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
           try VNImageRequestHandler(data: imageData).perform([request])
 
           let observations = request.results ?? []
-          if let value = observations.compactMap(\.payloadStringValue).first {
-            continuation.resume(returning: BarcodeDetectionResult.code(value))
+          if let observation = observations.first(where: { $0.payloadStringValue != nil }),
+            let value = observation.payloadStringValue
+          {
+            continuation.resume(
+              returning: BarcodeDetectionResult.code(
+                value: value,
+                detectedType: observation.symbology.rawValue
+              )
+            )
           } else {
             continuation.resume(returning: BarcodeDetectionResult.notFound)
           }
@@ -364,14 +372,16 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     from _: AVCaptureConnection
   ) {
     guard
-      let value = metadataObjects
-        .compactMap({ ($0 as? AVMetadataMachineReadableCodeObject)?.stringValue })
-        .first
+      let metadataObject = metadataObjects
+        .compactMap({ $0 as? AVMetadataMachineReadableCodeObject })
+        .first(where: { $0.stringValue != nil }),
+      let value = metadataObject.stringValue
     else { return }
+    let detectedType = metadataObject.type.rawValue
 
     Task { @MainActor [weak self] in
       guard let self, !self.isProcessingCapture else { return }
-      self.handleDetectedCode(value)
+      self.handleDetectedCode(value, detectedType: detectedType)
     }
   }
 
