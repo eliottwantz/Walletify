@@ -116,8 +116,6 @@ type CertificateEnvKey =
 const runtimeEnv = parseRuntimeEnv(Bun.env);
 const runtimeConfig = await getRuntimeConfig();
 
-let runtimeConfigPromise: Promise<RuntimeConfig> | undefined;
-
 const app = new Elysia()
 	.get("/", () => ({
 		service: "Walletify PKPass API",
@@ -208,6 +206,7 @@ async function buildPassBuffer({
 	const serialNumber = buildSerialNumber({ company, code, website });
 	const organizationName = "Walletify";
 	const assets = await buildPassAssets(runtimeConfig.assets, website);
+	const previewCode = truncate(code, 32);
 
 	const pass = new PKPass(assets, runtimeConfig.certificates, {
 		backgroundColor: runtimeConfig.colors.background,
@@ -227,16 +226,6 @@ async function buildPassBuffer({
 		key: "company",
 		label: "Company",
 		value: company,
-	});
-	pass.secondaryFields.push({
-		key: "codeLabel",
-		label: "Type",
-		value: "Scanned Code",
-	});
-	pass.auxiliaryFields.push({
-		key: "codePreview",
-		label: "Preview",
-		value: truncate(code, 32),
 	});
 	pass.backFields.push({
 		key: "companyName",
@@ -261,7 +250,28 @@ async function buildPassBuffer({
 		value:
 			"This is a user-generated Wallet pass created from a scanned QR or barcode.",
 	});
-	pass.setBarcodes(code);
+	pass.setBarcodes(
+		{
+			altText: previewCode,
+			format: "PKBarcodeFormatQR",
+			message: code,
+		},
+		{
+			altText: previewCode,
+			format: "PKBarcodeFormatPDF417",
+			message: code,
+		},
+		{
+			altText: previewCode,
+			format: "PKBarcodeFormatAztec",
+			message: code,
+		},
+		{
+			altText: previewCode,
+			format: "PKBarcodeFormatCode128",
+			message: code,
+		},
+	);
 
 	return pass.getAsBuffer();
 }
