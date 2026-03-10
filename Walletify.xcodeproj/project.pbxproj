@@ -6,6 +6,10 @@
 	objectVersion = 100;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		556DF5782F60827A008CCF31 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 556DF5772F60827A008CCF31 /* InjectionNext */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		55BF55F72F5CEFD000EED0AE /* Walletify.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Walletify.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -22,6 +26,7 @@
 		55BF55F42F5CEFD000EED0AE /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				556DF5782F60827A008CCF31 /* InjectionNext in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -60,6 +65,9 @@
 				55BF55F92F5CEFD000EED0AE /* Walletify */,
 			);
 			name = Walletify;
+			packageProductDependencies = (
+				556DF5772F60827A008CCF31 /* InjectionNext */,
+			);
 			productName = Walletify;
 			productReference = 55BF55F72F5CEFD000EED0AE /* Walletify.app */;
 			productType = "com.apple.product-type.application";
@@ -88,6 +96,9 @@
 			);
 			mainGroup = 55BF55EE2F5CEFD000EED0AE;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				556DF5762F60827A008CCF31 /* XCRemoteSwiftPackageReference "InjectionNext" */,
+			);
 			preferredProjectObjectVersion = 100;
 			productRefGroup = 55BF55F82F5CEFD000EED0AE /* Products */;
 			projectDirPath = "";
@@ -173,6 +184,10 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				"OTHER_LDFLAGS[arch=*]" = (
+					"-Xlinker",
+					"-interposable",
+				);
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -336,6 +351,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		556DF5762F60827A008CCF31 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/johnno1962/InjectionNext";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.5.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		556DF5772F60827A008CCF31 /* InjectionNext */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 556DF5762F60827A008CCF31 /* XCRemoteSwiftPackageReference "InjectionNext" */;
+			productName = InjectionNext;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 55BF55EF2F5CEFD000EED0AE /* Project object */;
 }
