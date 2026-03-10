@@ -522,7 +522,7 @@ function populateBackFields(
 	pass.backFields.push({
 		key: "walletifyNotice",
 		label: "Notice",
-		value: `Generated with Walletify.`,
+		value: "Generated with Walletify",
 	});
 }
 
