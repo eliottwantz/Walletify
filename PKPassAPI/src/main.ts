@@ -294,7 +294,7 @@ async function buildPassBuffer({
 		capturedImageBase64?.slice(0, 30) +
 			(capturedImageBase64 ? "..." : "undefined"),
 	);
-	const serialNumber = buildSerialNumber({ company, code, website });
+	const serialNumber = buildSerialNumber({ company, code });
 	const barcodeStrategy = resolveBarcodeStrategy(detectedType);
 	console.log("Resolved barcode strategy:", barcodeStrategy);
 	const stripAssets =
@@ -326,8 +326,12 @@ async function buildPassBuffer({
 	console.log("Creating pass with serial number:", serialNumber);
 
 	pass.type = "storeCard";
+	if (barcodeStrategy.kind === "native") {
+		pass.type = "generic";
+	}
 	populateFrontFields(pass, {
 		barcodeStrategy,
+		company,
 		code,
 	});
 	populateBackFields(pass, {
@@ -358,9 +362,9 @@ async function buildPassBuffer({
 	return passBuffer;
 }
 
-function buildSerialNumber({ company, code, website }: PassRequest): string {
+function buildSerialNumber({ company, code }: PassRequest): string {
 	return new Bun.CryptoHasher("sha256")
-		.update(`${company}\n${code}\n${normalizeWebsiteForSerialNumber(website)}`)
+		.update(`${company}\n${code}`)
 		.digest("hex");
 }
 
@@ -449,24 +453,39 @@ function populateFrontFields(
 	pass: PKPass,
 	{
 		barcodeStrategy,
+		company,
 		code,
 	}: {
 		barcodeStrategy: BarcodeStrategy;
+		company: string;
 		code: string;
 	},
 ): void {
+	if (barcodeStrategy.kind === "native") {
+		pass.primaryFields.push({
+			key: "company",
+			label: "Company",
+			value: company,
+		});
+	}
 	pass.headerFields.push({
 		key: "source",
 		label: "Made with",
 		textAlignment: "PKTextAlignmentRight",
 		value: "Walletify",
 	});
-
-	pass.secondaryFields.push({
-		key: "code",
-		label: "Card number",
-		value: code,
-	});
+	pass.secondaryFields.push(
+		{
+			key: "companyName",
+			label: "Company",
+			value: company,
+		},
+		{
+			key: "code",
+			label: "Card number",
+			value: code,
+		},
+	);
 }
 
 function populateBackFields(
@@ -664,6 +683,9 @@ async function fetchFaviconAssets(
 			"logo.png": icon,
 			"logo@2x.png": icon,
 			"logo@3x.png": icon,
+			"thumbnail.png": icon,
+			"thumbnail@2x.png": icon,
+			"thumbnail@3x.png": icon,
 		};
 	} catch (error) {
 		console.warn(
