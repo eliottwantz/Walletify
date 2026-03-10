@@ -67,11 +67,11 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
 
   private static let supportedVisionSymbologies: [VNBarcodeSymbology] = [
     .qr,
-    .microQR,
+//    .microQR,
     .aztec,
     .pdf417,
-    .microPDF417,
-    .dataMatrix,
+//    .microPDF417,
+//    .dataMatrix,
     .ean8,
     .ean13,
     .upce,
@@ -86,10 +86,10 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     .i2of5Checksum,
     .itf14,
     .codabar,
-    .gs1DataBar,
-    .gs1DataBarExpanded,
-    .gs1DataBarLimited,
-    .msiPlessey,
+//    .gs1DataBar,
+//    .gs1DataBarExpanded,
+//    .gs1DataBarLimited,
+//    .msiPlessey,
   ]
 
   var onCodeFound: ((BarcodeScanResult) -> Void)?

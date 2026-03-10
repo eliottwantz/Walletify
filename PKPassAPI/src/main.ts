@@ -115,7 +115,9 @@ const RENDERED_STRIP_TYPES = new Map<string, RenderedStripDefinition>([
 		"org.iso.Code39Mod43",
 		{ bcid: "code39", encoderOptions: { includecheck: true } },
 	],
-	["org.iso.MicroPDF417", { bcid: "micropdf417" }],
+	// ["org.iso.MicroPDF417", { bcid: "micropdf417" }],
+	// ["org.iso.MicroQR", { bcid: "microqrcode" }],
+	// ["org.iso.DataMatrix", { bcid: "datamatrix" }],
 ]);
 
 class ConfigError extends Error {}
@@ -452,7 +454,7 @@ function populateFrontFields(
 		});
 	} else {
 		pass.secondaryFields.push({
-			key: "companyName",
+			key: "company",
 			label: "Company",
 			value: company,
 		});
