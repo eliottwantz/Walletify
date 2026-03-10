@@ -5,6 +5,7 @@
     "": {
       "name": "PKPassAPI",
       "dependencies": {
+        "@bwip-js/node": "^4.8.0",
         "elysia": "1",
         "passkit-generator": "^3.5.7",
         "zod": "^4.3.6",
@@ -17,6 +18,8 @@
   },
   "packages": {
     "@borewit/text-codec": ["@borewit/text-codec@0.2.1", "", {}, "sha512-k7vvKPbf7J2fZ5klGRD9AeKfUvojuZIQ3BT5u7Jfv+puwXkUBUT5PVyMDfJZpy30CBDXGMgw7fguK/lpOMBvgw=="],
+
+    "@bwip-js/node": ["@bwip-js/node@4.8.0", "", {}, "sha512-1AWSGZelWD44/kuL7n4QkH60OsjYE57+gT2dGzrmmse1auqOiVG/hbBpNvtTakPb2uzBjVmRbbNOWeYs5cDqPA=="],
 
     "@hapi/hoek": ["@hapi/hoek@9.3.0", "", {}, "sha512-/c6rf4UJlmHlC9b5BaNvzAcFv7HZ2QHaV0D4/HNlBdvFnvQq8RI4kYdhyPCl7Xj+oWvTWQ8ujhqS53LIgAe6KQ=="],
 

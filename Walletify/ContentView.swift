@@ -13,7 +13,7 @@ import SwiftUI
 struct ContentView: View {
   @State private var companyName = ""
   @State private var websiteURL = ""
-  @State private var scannedCode: String?
+  @State private var scannedResult: BarcodeScanResult?
   @State private var isScannerPresented = false
   @State private var isLoading = false
   @State private var addPass: WalletPassItem?
@@ -33,8 +33,8 @@ struct ContentView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
 
-          if let scannedCode {
-            LabeledContent("Code", value: scannedCode)
+          if let scannedResult {
+            LabeledContent("Code", value: scannedResult.code)
               .font(.footnote)
               .textSelection(.enabled)
           } else {
@@ -66,8 +66,8 @@ struct ContentView: View {
       }
       .fullScreenCover(isPresented: $isScannerPresented) {
         BarcodeScannerView(
-          onCodeFound: { code in
-            scannedCode = code
+          onCodeFound: { result in
+            scannedResult = result
             isScannerPresented = false
             errorMessage = nil
           },
@@ -93,20 +93,22 @@ struct ContentView: View {
   }
 
   private var isSaveDisabled: Bool {
-    companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || scannedCode == nil
+    companyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || scannedResult == nil
       || isLoading
   }
 
   @MainActor
   private func saveToWallet() async {
-    guard let scannedCode else { return }
+    guard let scannedResult else { return }
     isLoading = true
     defer { isLoading = false }
 
     do {
       let pass = try await passService.createPass(
         companyName: companyName,
-        codeValue: scannedCode,
+        codeValue: scannedResult.code,
+        detectedType: scannedResult.detectedType,
+        capturedImageData: scannedResult.capturedImageData,
         websiteURL: websiteURL
       )
       addPass = WalletPassItem(pass: pass)

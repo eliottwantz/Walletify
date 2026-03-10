@@ -1,3 +1,4 @@
+import { toBuffer } from "@bwip-js/node";
 import { Elysia } from "elysia";
 import { PKPass } from "passkit-generator";
 import { z } from "zod";
@@ -38,6 +39,86 @@ type RuntimeConfig = {
 	};
 };
 
+type WalletBarcodeFormat =
+	| "PKBarcodeFormatAztec"
+	| "PKBarcodeFormatCode128"
+	| "PKBarcodeFormatPDF417"
+	| "PKBarcodeFormatQR";
+
+type RenderedStripDefinition = {
+	bcid: string;
+	encoderOptions?: Record<string, boolean | number | string>;
+};
+
+type BarcodeStrategy =
+	| { kind: "legacyFallback" }
+	| { format: WalletBarcodeFormat; kind: "native" }
+	| ({ kind: "renderedStrip" } & RenderedStripDefinition)
+	| { detectedType: string; kind: "unsupported" };
+
+const PASS_MESSAGE_ENCODING = "iso-8859-1";
+const STRIP_RENDER_CONFIG = {
+	backgroundcolor: "FFFFFF",
+	barcolor: "000000",
+	paddingwidth: 10,
+} as const;
+const STRIP_RENDER_VARIANTS = [
+	{ filename: "strip.png", scale: 1 },
+	{ filename: "strip@2x.png", scale: 2 },
+	{ filename: "strip@3x.png", scale: 3 },
+] as const;
+const NATIVE_WALLET_TYPES = new Map<string, WalletBarcodeFormat>([
+	["VNBarcodeSymbologyAztec", "PKBarcodeFormatAztec"],
+	["VNBarcodeSymbologyCode128", "PKBarcodeFormatCode128"],
+	["VNBarcodeSymbologyPDF417", "PKBarcodeFormatPDF417"],
+	["VNBarcodeSymbologyQR", "PKBarcodeFormatQR"],
+	["org.iso.Aztec", "PKBarcodeFormatAztec"],
+	["org.iso.Code128", "PKBarcodeFormatCode128"],
+	["org.iso.PDF417", "PKBarcodeFormatPDF417"],
+	["org.iso.QRCode", "PKBarcodeFormatQR"],
+]);
+const RENDERED_STRIP_TYPES = new Map<string, RenderedStripDefinition>([
+	["Codabar", { bcid: "rationalizedCodabar" }],
+	["VNBarcodeSymbologyCode39", { bcid: "code39" }],
+	[
+		"VNBarcodeSymbologyCode39Checksum",
+		{ bcid: "code39", encoderOptions: { includecheck: true } },
+	],
+	["VNBarcodeSymbologyCode39FullASCII", { bcid: "code39ext" }],
+	[
+		"VNBarcodeSymbologyCode39FullASCIIChecksum",
+		{ bcid: "code39ext", encoderOptions: { includecheck: true } },
+	],
+	["VNBarcodeSymbologyCode93", { bcid: "code93" }],
+	["VNBarcodeSymbologyCode93i", { bcid: "code93ext" }],
+	["VNBarcodeSymbologyCodabar", { bcid: "rationalizedCodabar" }],
+	["VNBarcodeSymbologyEAN13", { bcid: "ean13" }],
+	["VNBarcodeSymbologyEAN8", { bcid: "ean8" }],
+	["VNBarcodeSymbologyGS1DataBar", { bcid: "databaromni" }],
+	["VNBarcodeSymbologyGS1DataBarExpanded", { bcid: "databarexpanded" }],
+	["VNBarcodeSymbologyGS1DataBarLimited", { bcid: "databarlimited" }],
+	["VNBarcodeSymbologyI2of5", { bcid: "interleaved2of5" }],
+	["VNBarcodeSymbologyI2of5Checksum", { bcid: "interleaved2of5" }],
+	["VNBarcodeSymbologyITF14", { bcid: "itf14" }],
+	["VNBarcodeSymbologyMSIPlessey", { bcid: "msi" }],
+	["VNBarcodeSymbologyUPCE", { bcid: "upce" }],
+	["com.intermec.Code93", { bcid: "code93" }],
+	["org.ansi.Interleaved2of5", { bcid: "interleaved2of5" }],
+	["org.gs1.EAN-13", { bcid: "ean13" }],
+	["org.gs1.EAN-8", { bcid: "ean8" }],
+	["org.gs1.GS1DataBar", { bcid: "databaromni" }],
+	["org.gs1.GS1DataBarExpanded", { bcid: "databarexpanded" }],
+	["org.gs1.GS1DataBarLimited", { bcid: "databarlimited" }],
+	["org.gs1.ITF14", { bcid: "itf14" }],
+	["org.gs1.UPC-E", { bcid: "upce" }],
+	["org.iso.Code39", { bcid: "code39" }],
+	[
+		"org.iso.Code39Mod43",
+		{ bcid: "code39", encoderOptions: { includecheck: true } },
+	],
+	["org.iso.MicroPDF417", { bcid: "micropdf417" }],
+]);
+
 class ConfigError extends Error {}
 class RequestError extends Error {}
 
@@ -59,6 +140,8 @@ const requiredTrimmedString = (message: string) =>
 const passRequestSchema = z.object({
 	code: requiredTrimmedString("Missing required 'code' value."),
 	company: requiredTrimmedString("Missing required 'company' value."),
+	capturedImageBase64: optionalTrimmedString,
+	detectedType: optionalTrimmedString,
 	website: optionalTrimmedString,
 });
 
@@ -201,88 +284,78 @@ function parsePassRequest(payload: unknown): PassRequest {
 async function buildPassBuffer({
 	company,
 	code,
+	capturedImageBase64,
+	detectedType,
 	website,
 }: PassRequest): Promise<Buffer> {
+	console.log("Building pass for:", { company, code, website, detectedType });
+	console.log(
+		"Captured image base64 trimmed",
+		capturedImageBase64?.slice(0, 30) +
+			(capturedImageBase64 ? "..." : "undefined"),
+	);
 	const serialNumber = buildSerialNumber({ company, code, website });
-	const organizationName = runtimeConfig.organizationName;
-	const assets = await buildPassAssets(runtimeConfig.assets, website);
+	const barcodeStrategy = resolveBarcodeStrategy(detectedType);
+	console.log("Resolved barcode strategy:", barcodeStrategy);
+	const stripAssets =
+		barcodeStrategy.kind === "renderedStrip"
+			? await buildRenderedStripAssets({
+					code,
+					rendering: barcodeStrategy,
+				})
+			: undefined;
+	const assets = await buildPassAssets(runtimeConfig.assets, {
+		stripAssets,
+		website,
+	});
 	const previewCode = truncate(code, 32);
 
 	const pass = new PKPass(assets, runtimeConfig.certificates, {
 		backgroundColor: runtimeConfig.colors.background,
-		description: `${company} pass`,
+		description: company,
 		formatVersion: 1,
 		foregroundColor: runtimeConfig.colors.foreground,
 		labelColor: runtimeConfig.colors.label,
 		logoText: company,
-		organizationName,
+		organizationName: company,
 		passTypeIdentifier: runtimeConfig.passTypeIdentifier,
 		serialNumber,
 		teamIdentifier: runtimeConfig.teamIdentifier,
 	});
 
-	pass.type = "storeCard";
-	pass.primaryFields.push({
-		key: "company",
-		label: "Company",
-		value: company,
-	});
-	pass.headerFields.push({
-		key: "Source",
-		label: "Made with",
-		value: organizationName,
-		textAlignment: "PKTextAlignmentRight",
-	});
-	pass.backFields.push({
-		key: "companyName",
-		label: "Company",
-		value: company,
-	});
-	pass.backFields.push({
-		key: "scannedCode",
-		label: "Scanned value",
-		value: code,
-	});
-	if (website) {
-		pass.backFields.push({
-			key: "website",
-			label: "Website",
-			value: normalizeWebsiteURL(website).toString(),
-		});
-	}
-	pass.backFields.push({
-		key: "walletifyNotice",
-		label: "Notice",
-		value: `This is a user-generated Wallet pass created from a scanned QR or barcode. Generated with ${organizationName}.`,
-	});
-	pass.setBarcodes(
-		{
-			altText: previewCode,
-			format: "PKBarcodeFormatQR",
-			message: code,
-			messageEncoding: "iso-8859-1",
-		},
-		{
-			altText: previewCode,
-			format: "PKBarcodeFormatPDF417",
-			message: code,
-			messageEncoding: "iso-8859-1",
-		},
-		{
-			altText: previewCode,
-			format: "PKBarcodeFormatAztec",
-			message: code,
-			messageEncoding: "iso-8859-1",
-		},
-		{
-			altText: previewCode,
-			format: "PKBarcodeFormatCode128",
-			message: code,
-			messageEncoding: "iso-8859-1",
-		},
-	);
+	console.log("Creating pass with serial number:", serialNumber);
 
-	return pass.getAsBuffer();
+	pass.type = "storeCard";
+	populateFrontFields(pass, {
+		barcodeStrategy,
+		code,
+	});
+	populateBackFields(pass, {
+		barcodeStrategy,
+		code,
+		company,
+		website,
+	});
+
+	if (barcodeStrategy.kind === "native") {
+		pass.setBarcodes(
+			makePassBarcode({
+				code,
+				format: barcodeStrategy.format,
+				previewCode,
+			}),
+		);
+	} else if (barcodeStrategy.kind === "legacyFallback") {
+		pass.setBarcodes(...makeLegacyFallbackBarcodes(code, previewCode));
+	}
+
+	const passBuffer = pass.getAsBuffer();
+	await writeDebugArtifacts({
+		stripImage: stripAssets?.["strip@3x.png"] ?? stripAssets?.["strip.png"],
+		passBuffer,
+		serialNumber,
+	});
+	return passBuffer;
 }
 
 function buildSerialNumber({ company, code, website }: PassRequest): string {
@@ -293,22 +366,257 @@ function buildSerialNumber({ company, code, website }: PassRequest): string {
 
 async function buildPassAssets(
 	defaultAssets: Record<string, Buffer>,
-	website?: string,
+	{
+		stripAssets,
+		website,
+	}: {
+		stripAssets?: Record<string, Buffer>;
+		website?: string;
+	},
 ): Promise<Record<string, Buffer>> {
-	if (!website) {
-		return defaultAssets;
+	const assets = { ...defaultAssets };
+	if (website) {
+		const faviconAssets = await fetchFaviconAssets(website);
+		if (faviconAssets) {
+			Object.assign(assets, faviconAssets);
+		}
 	}
 
-	const faviconAssets = await fetchFaviconAssets(website);
-	if (!faviconAssets) {
-		return defaultAssets;
+	if (stripAssets) {
+		Object.assign(assets, stripAssets);
+	}
+
+	return assets;
+}
+
+async function writeDebugArtifacts({
+	stripImage,
+	passBuffer,
+	serialNumber,
+}: {
+	stripImage?: Buffer;
+	passBuffer: Buffer;
+	serialNumber: string;
+}): Promise<void> {
+	if (stripImage) {
+		const imagePath = `/tmp/walletify-strip-${serialNumber}.png`;
+		console.log("Generated strip image:", {
+			byteLength: stripImage.byteLength,
+			headerHex: stripImage.subarray(0, 16).toString("hex"),
+			path: imagePath,
+		});
+		await Bun.write(imagePath, stripImage);
+	}
+
+	const passPath = `/tmp/walletify-pass-${serialNumber}.pkpass`;
+	console.log("Writing generated pass debug artifact:", {
+		byteLength: passBuffer.byteLength,
+		path: passPath,
+	});
+	await Bun.write(passPath, passBuffer);
+}
+
+function resolveBarcodeStrategy(detectedType?: string): BarcodeStrategy {
+	console.log("Detected barcode type:", detectedType);
+	if (!detectedType) {
+		return { kind: "legacyFallback" };
+	}
+
+	const normalizedType = detectedType.trim();
+	const nativeFormat = NATIVE_WALLET_TYPES.get(normalizedType);
+	if (nativeFormat) {
+		return {
+			format: nativeFormat,
+			kind: "native",
+		};
+	}
+
+	const renderedStrip = RENDERED_STRIP_TYPES.get(normalizedType);
+	if (renderedStrip) {
+		return {
+			...renderedStrip,
+			kind: "renderedStrip",
+		};
 	}
 
 	return {
-		...defaultAssets,
-		...faviconAssets,
+		detectedType: normalizedType,
+		kind: "unsupported",
 	};
 }
+
+function populateFrontFields(
+	pass: PKPass,
+	{
+		barcodeStrategy,
+		code,
+	}: {
+		barcodeStrategy: BarcodeStrategy;
+		code: string;
+	},
+): void {
+	pass.headerFields.push({
+		key: "source",
+		label: "Made with",
+		textAlignment: "PKTextAlignmentRight",
+		value: "Walletify",
+	});
+
+	pass.secondaryFields.push({
+		key: "code",
+		label: "Card number",
+		value: code,
+	});
+}
+
+function populateBackFields(
+	pass: PKPass,
+	{
+		barcodeStrategy,
+		code,
+		company,
+		website,
+	}: {
+		barcodeStrategy: BarcodeStrategy;
+		code: string;
+		company: string;
+		website?: string;
+	},
+): void {
+	pass.backFields.push({
+		key: "companyName",
+		label: "Company",
+		value: company,
+	});
+	pass.backFields.push({
+		key: "scannedCode",
+		label: "Card number",
+		value: code,
+	});
+
+	if (website) {
+		pass.backFields.push({
+			key: "website",
+			label: "Website",
+			value: normalizeWebsiteURL(website).toString(),
+		});
+	}
+
+	if (barcodeStrategy.kind === "unsupported") {
+		pass.backFields.push({
+			key: "unsupportedBarcodeType",
+			label: "Unsupported format",
+			value: barcodeStrategy.detectedType,
+		});
+		pass.backFields.push({
+			key: "unsupportedBarcodeNotice",
+			label: "Notice",
+			value:
+				"Walletify could not recreate this barcode format automatically, so no Wallet barcode was generated.",
+		});
+	}
+
+	pass.backFields.push({
+		key: "walletifyNotice",
+		label: "Notice",
+		value: `Generated with Walletify.`,
+	});
+}
+
+function makePassBarcode({
+	code,
+	format,
+	previewCode,
+}: {
+	code: string;
+	format: WalletBarcodeFormat;
+	previewCode: string;
+}) {
+	return {
+		altText: previewCode,
+		format,
+		message: code,
+		messageEncoding: PASS_MESSAGE_ENCODING,
+	};
+}
+
+function makeLegacyFallbackBarcodes(code: string, previewCode: string) {
+	return [
+		makePassBarcode({
+			code,
+			format: "PKBarcodeFormatQR",
+			previewCode,
+		}),
+		makePassBarcode({
+			code,
+			format: "PKBarcodeFormatPDF417",
+			previewCode,
+		}),
+		makePassBarcode({
+			code,
+			format: "PKBarcodeFormatAztec",
+			previewCode,
+		}),
+		makePassBarcode({
+			code,
+			format: "PKBarcodeFormatCode128",
+			previewCode,
+		}),
+	] as const;
+}
+
+async function buildRenderedStripAssets({
+	code,
+	rendering,
+}: {
+	code: string;
+	rendering: Extract<BarcodeStrategy, { kind: "renderedStrip" }>;
+}): Promise<Record<string, Buffer>> {
+	const entries = await Promise.all(
+		STRIP_RENDER_VARIANTS.map(
+			async ({ filename, scale }) =>
+				[
+					filename,
+					await renderStripBarcode({
+						bcid: rendering.bcid,
+						code,
+						encoderOptions: rendering.encoderOptions,
+						scale,
+					}),
+				] as const,
+		),
+	);
+
+	return Object.fromEntries(entries);
+}
+
+async function renderStripBarcode({
+	bcid,
+	code,
+	encoderOptions,
+	scale,
+}: {
+	bcid: string;
+	code: string;
+	encoderOptions?: Record<string, boolean | number | string>;
+	scale: number;
+}): Promise<Buffer> {
+	try {
+		return await toBuffer({
+			...STRIP_RENDER_CONFIG,
+			...(encoderOptions ?? {}),
+			bcid,
+			scaleX: scale,
+			scaleY: scale,
+			text: code,
+		});
+	} catch (error) {
+		throw new RequestError(
+			`Could not recreate the detected barcode type '${bcid}' from the scanned value: ${stringifyError(error)}`,
+		);
+	}
+}
+
 async function fetchFaviconAssets(
 	website: string,
 ): Promise<Record<string, Buffer> | undefined> {
@@ -416,54 +724,40 @@ async function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 	const assetPath = await resolvePassAssetPath();
-	const [
-		icon,
-		icon2x,
-		icon3x,
-		// thumbnail,
-		// thumbnail2x,
-		// thumbnail3x,
-		wwdr,
-		signerCert,
-		signerKey,
-	] = await Promise.all([
-		readRequiredFile(`${assetPath}/icon.png`),
-		readRequiredFile(`${assetPath}/icon@2x.png`),
-		readRequiredFile(`${assetPath}/icon@3x.png`),
-		// readRequiredFile(`${assetPath}/thumbnail.png`),
-		// readRequiredFile(`${assetPath}/thumbnail@2x.png`),
-		// readRequiredFile(`${assetPath}/thumbnail@3x.png`),
-		readCertificate({
-			env: runtimeEnv,
-			base64Env: "WWDR_CERT_BASE64",
-			defaultPath: `${DEFAULT_CERTS_PATH}/wwdr.pem`,
-			pathEnv: "WWDR_CERT_PATH",
-			rawEnv: "WWDR_CERT_PEM",
-		}),
-		readCertificate({
-			env: runtimeEnv,
-			base64Env: "SIGNER_CERT_BASE64",
-			defaultPath: `${DEFAULT_CERTS_PATH}/signerCert.pem`,
-			pathEnv: "SIGNER_CERT_PATH",
-			rawEnv: "SIGNER_CERT_PEM",
-		}),
-		readCertificate({
-			env: runtimeEnv,
-			base64Env: "SIGNER_KEY_BASE64",
-			defaultPath: `${DEFAULT_CERTS_PATH}/signerKey.pem`,
-			pathEnv: "SIGNER_KEY_PATH",
-			rawEnv: "SIGNER_KEY_PEM",
-		}),
-	]);
+	const [icon, icon2x, icon3x, wwdr, signerCert, signerKey] = await Promise.all(
+		[
+			readRequiredFile(`${assetPath}/icon.png`),
+			readRequiredFile(`${assetPath}/icon@2x.png`),
+			readRequiredFile(`${assetPath}/icon@3x.png`),
+			readCertificate({
+				env: runtimeEnv,
+				base64Env: "WWDR_CERT_BASE64",
+				defaultPath: `${DEFAULT_CERTS_PATH}/wwdr.pem`,
+				pathEnv: "WWDR_CERT_PATH",
+				rawEnv: "WWDR_CERT_PEM",
+			}),
+			readCertificate({
+				env: runtimeEnv,
+				base64Env: "SIGNER_CERT_BASE64",
+				defaultPath: `${DEFAULT_CERTS_PATH}/signerCert.pem`,
+				pathEnv: "SIGNER_CERT_PATH",
+				rawEnv: "SIGNER_CERT_PEM",
+			}),
+			readCertificate({
+				env: runtimeEnv,
+				base64Env: "SIGNER_KEY_BASE64",
+				defaultPath: `${DEFAULT_CERTS_PATH}/signerKey.pem`,
+				pathEnv: "SIGNER_KEY_PATH",
+				rawEnv: "SIGNER_KEY_PEM",
+			}),
+		],
+	);
 
 	return {
 		assets: {
 			"icon.png": icon,
 			"icon@2x.png": icon2x,
 			"icon@3x.png": icon3x,
-			// "thumbnail.png": thumbnail,
-			// "thumbnail@2x.png": thumbnail2x,
-			// "thumbnail@3x.png": thumbnail3x,
 		},
 		certificates: {
 			signerCert,

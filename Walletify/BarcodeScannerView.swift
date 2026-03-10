@@ -10,14 +10,25 @@ import AVFoundation
 import SwiftUI
 import Vision
 
-private enum BarcodeDetectionResult: Sendable {
-  case code(value: String, detectedType: String)
+private struct DetectedPhotoBarcode: Sendable {
+  let value: String
+  let detectedType: String
+}
+
+private enum PhotoBarcodeDetectionResult: Sendable {
+  case observations([DetectedPhotoBarcode])
   case notFound
   case failure(String)
 }
 
+struct BarcodeScanResult: Sendable {
+  let code: String
+  let detectedType: String
+  let capturedImageData: Data?
+}
+
 struct BarcodeScannerView: UIViewControllerRepresentable {
-  let onCodeFound: (String) -> Void
+  let onCodeFound: (BarcodeScanResult) -> Void
   let onCancel: () -> Void
 
   func makeUIViewController(context: Context) -> ScannerViewController {
@@ -82,7 +93,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     .msiPlessey,
   ]
 
-  var onCodeFound: ((String) -> Void)?
+  var onCodeFound: ((BarcodeScanResult) -> Void)?
   var onCancel: (() -> Void)?
 
   private let session = AVCaptureSession()
@@ -108,6 +119,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     super.viewDidLoad()
     view.backgroundColor = .black
     setupLayout()
+    updateCaptureAvailability()
     configureCameraAccess()
   }
 
@@ -118,16 +130,12 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
 
   override func viewWillAppear(_ animated: Bool) {
     super.viewWillAppear(animated)
-    guard isSessionConfigured else { return }
-
-    if !session.isRunning {
-      session.startRunning()
-    }
+    guard isSessionConfigured, !session.isRunning else { return }
+    session.startRunning()
   }
 
   override func viewWillDisappear(_ animated: Bool) {
     super.viewWillDisappear(animated)
-
     if session.isRunning {
       session.stopRunning()
     }
@@ -254,9 +262,8 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     previewLayer.frame = previewView.bounds
     previewView.layer.addSublayer(previewLayer)
     self.previewLayer = previewLayer
-    captureButton.isEnabled = true
-    captureButton.alpha = 1
     session.startRunning()
+    updateCaptureAvailability()
   }
 
   private func showUnavailableState(message: String) {
@@ -265,13 +272,18 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     captureButton.alpha = 0.5
   }
 
+  private func updateCaptureAvailability() {
+    captureButton.isEnabled = isSessionConfigured && !isProcessingCapture
+    captureButton.alpha = captureButton.isEnabled ? 1 : 0.5
+  }
+
   @objc
   private func capturePhoto() {
     guard isSessionConfigured, !isProcessingCapture else { return }
 
     isProcessingCapture = true
-    captureButton.isEnabled = false
     statusLabel.text = "Capturing photo…"
+    updateCaptureAvailability()
 
     let settings = AVCapturePhotoSettings()
     if photoOutput.supportedFlashModes.contains(.auto) {
@@ -285,57 +297,64 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     onCancel?()
   }
 
-  private func handleDetectedCode(_ value: String, detectedType: String) {
+  private func handleDetectedCode(
+    _ value: String,
+    detectedType: String,
+    capturedImageData: Data? = nil
+  ) {
     if session.isRunning {
       session.stopRunning()
     }
 
     print("Detected barcode type: \(detectedType)")
-    onCodeFound?(value)
+    onCodeFound?(
+      BarcodeScanResult(
+        code: value,
+        detectedType: detectedType,
+        capturedImageData: capturedImageData
+      )
+    )
   }
 
   private func handlePhotoCaptureResult(imageData: Data?, errorMessage: String?) {
-    if let errorMessage {
+    guard errorMessage == nil, let imageData else {
       isProcessingCapture = false
-      captureButton.isEnabled = isSessionConfigured
-      captureButton.alpha = isSessionConfigured ? 1 : 0.5
-      statusLabel.text = errorMessage
-      return
-    }
-
-    guard let imageData else {
-      isProcessingCapture = false
-      captureButton.isEnabled = isSessionConfigured
-      captureButton.alpha = isSessionConfigured ? 1 : 0.5
-      statusLabel.text = "Unable to process the captured photo."
+      statusLabel.text = "Couldn't capture the photo. Try again."
+      updateCaptureAvailability()
       return
     }
 
     statusLabel.text = "Looking for a code…"
-    detectBarcode(in: imageData)
-  }
-
-  private func detectBarcode(in imageData: Data) {
-    Task { [weak self, imageData] in
-      let result = await Self.detectBarcodeResult(in: imageData)
+    Task { @MainActor [weak self, imageData] in
+      let detectionResult = await Self.detectPhotoBarcodes(in: imageData)
       guard let self else { return }
-
-      self.isProcessingCapture = false
-      self.captureButton.isEnabled = self.isSessionConfigured
-      self.captureButton.alpha = self.isSessionConfigured ? 1 : 0.5
-
-      switch result {
-      case let .code(value, detectedType):
-        self.handleDetectedCode(value, detectedType: detectedType)
-      case .notFound:
-        self.statusLabel.text = "No QR or bar code found. Try again."
-      case let .failure(message):
-        self.statusLabel.text = message
-      }
+      self.finishPhotoDetection(detectionResult)
     }
   }
 
-  private static func detectBarcodeResult(in imageData: Data) async -> BarcodeDetectionResult {
+  private func finishPhotoDetection(_ detectionResult: PhotoBarcodeDetectionResult) {
+    isProcessingCapture = false
+    updateCaptureAvailability()
+
+    switch detectionResult {
+    case let .observations(observations):
+      guard let firstObservation = observations.first else {
+        statusLabel.text = "No QR or bar code found. Try again."
+        return
+      }
+
+      handleDetectedCode(
+        firstObservation.value,
+        detectedType: firstObservation.detectedType
+      )
+    case .notFound:
+      statusLabel.text = "No QR or bar code found. Try again."
+    case let .failure(message):
+      statusLabel.text = message
+    }
+  }
+
+  private static func detectPhotoBarcodes(in imageData: Data) async -> PhotoBarcodeDetectionResult {
     let supportedVisionSymbologies = Self.supportedVisionSymbologies
 
     return await withCheckedContinuation { continuation in
@@ -346,21 +365,21 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
         do {
           try VNImageRequestHandler(data: imageData).perform([request])
 
-          let observations = request.results ?? []
-          if let observation = observations.first(where: { $0.payloadStringValue != nil }),
-            let value = observation.payloadStringValue
-          {
-            continuation.resume(
-              returning: BarcodeDetectionResult.code(
-                value: value,
-                detectedType: observation.symbology.rawValue
-              )
+          let observations = (request.results ?? []).compactMap { observation -> DetectedPhotoBarcode? in
+            guard let value = observation.payloadStringValue else { return nil }
+            return DetectedPhotoBarcode(
+              value: value,
+              detectedType: observation.symbology.rawValue
             )
+          }
+
+          if observations.isEmpty {
+            continuation.resume(returning: .notFound)
           } else {
-            continuation.resume(returning: BarcodeDetectionResult.notFound)
+            continuation.resume(returning: .observations(observations))
           }
         } catch {
-          continuation.resume(returning: BarcodeDetectionResult.failure(error.localizedDescription))
+          continuation.resume(returning: .failure(error.localizedDescription))
         }
       }
     }
