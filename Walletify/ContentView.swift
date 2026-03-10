@@ -108,7 +108,6 @@ struct ContentView: View {
         companyName: companyName,
         codeValue: scannedResult.code,
         detectedType: scannedResult.detectedType,
-        capturedImageData: scannedResult.capturedImageData,
         websiteURL: websiteURL
       )
       addPass = WalletPassItem(pass: pass)

@@ -51,7 +51,6 @@ type RenderedStripDefinition = {
 };
 
 type BarcodeStrategy =
-	| { kind: "legacyFallback" }
 	| { format: WalletBarcodeFormat; kind: "native" }
 	| ({ kind: "renderedStrip" } & RenderedStripDefinition)
 	| { detectedType: string; kind: "unsupported" };
@@ -140,8 +139,7 @@ const requiredTrimmedString = (message: string) =>
 const passRequestSchema = z.object({
 	code: requiredTrimmedString("Missing required 'code' value."),
 	company: requiredTrimmedString("Missing required 'company' value."),
-	capturedImageBase64: optionalTrimmedString,
-	detectedType: optionalTrimmedString,
+	detectedType: requiredTrimmedString("Missing required 'detectedType' value."),
 	website: optionalTrimmedString,
 });
 
@@ -207,16 +205,6 @@ const app = new Elysia()
 	.get("/health", () => ({
 		status: "ok",
 	}))
-	.get("/pass", async ({ query, set }) => {
-		return handlePassRequest(
-			{
-				company: query.company,
-				code: query.code,
-				website: query.website,
-			},
-			set,
-		);
-	})
 	.post("/pass", async ({ body, set }) => handlePassRequest(body, set))
 	.listen(runtimeEnv.PORT);
 
@@ -276,24 +264,22 @@ function parsePassRequest(payload: unknown): PassRequest {
 		throw new RequestError("Missing required 'code' value.");
 	}
 
+	if (firstIssue?.path[0] === "detectedType") {
+		throw new RequestError("Missing required 'detectedType' value.");
+	}
+
 	throw new RequestError(
-		"Invalid request payload. Expected non-empty 'company' and 'code' values.",
+		"Invalid request payload. Expected non-empty 'company', 'code', and 'detectedType' values.",
 	);
 }
 
 async function buildPassBuffer({
 	company,
 	code,
-	capturedImageBase64,
 	detectedType,
 	website,
 }: PassRequest): Promise<Buffer> {
 	console.log("Building pass for:", { company, code, website, detectedType });
-	console.log(
-		"Captured image base64 trimmed",
-		capturedImageBase64?.slice(0, 30) +
-			(capturedImageBase64 ? "..." : "undefined"),
-	);
 	const serialNumber = buildSerialNumber({ company, code });
 	const barcodeStrategy = resolveBarcodeStrategy(detectedType);
 	console.log("Resolved barcode strategy:", barcodeStrategy);
@@ -349,8 +335,6 @@ async function buildPassBuffer({
 				previewCode,
 			}),
 		);
-	} else if (barcodeStrategy.kind === "legacyFallback") {
-		pass.setBarcodes(...makeLegacyFallbackBarcodes(code, previewCode));
 	}
 
 	const passBuffer = pass.getAsBuffer();
@@ -362,7 +346,10 @@ async function buildPassBuffer({
 	return passBuffer;
 }
 
-function buildSerialNumber({ company, code }: PassRequest): string {
+function buildSerialNumber({
+	company,
+	code,
+}: Pick<PassRequest, "code" | "company">): string {
 	return new Bun.CryptoHasher("sha256")
 		.update(`${company}\n${code}`)
 		.digest("hex");
@@ -420,12 +407,8 @@ async function writeDebugArtifacts({
 	await Bun.write(passPath, passBuffer);
 }
 
-function resolveBarcodeStrategy(detectedType?: string): BarcodeStrategy {
+function resolveBarcodeStrategy(detectedType: string): BarcodeStrategy {
 	console.log("Detected barcode type:", detectedType);
-	if (!detectedType) {
-		return { kind: "legacyFallback" };
-	}
-
 	const normalizedType = detectedType.trim();
 	const nativeFormat = NATIVE_WALLET_TYPES.get(normalizedType);
 	if (nativeFormat) {
@@ -467,6 +450,12 @@ function populateFrontFields(
 			label: "Company",
 			value: company,
 		});
+	} else {
+		pass.secondaryFields.push({
+			key: "companyName",
+			label: "Company",
+			value: company,
+		});
 	}
 	pass.headerFields.push({
 		key: "source",
@@ -474,18 +463,11 @@ function populateFrontFields(
 		textAlignment: "PKTextAlignmentRight",
 		value: "Walletify",
 	});
-	pass.secondaryFields.push(
-		{
-			key: "companyName",
-			label: "Company",
-			value: company,
-		},
-		{
-			key: "code",
-			label: "Card number",
-			value: code,
-		},
-	);
+	pass.secondaryFields.push({
+		key: "code",
+		label: "Card number",
+		value: code,
+	});
 }
 
 function populateBackFields(
@@ -557,31 +539,6 @@ function makePassBarcode({
 		message: code,
 		messageEncoding: PASS_MESSAGE_ENCODING,
 	};
-}
-
-function makeLegacyFallbackBarcodes(code: string, previewCode: string) {
-	return [
-		makePassBarcode({
-			code,
-			format: "PKBarcodeFormatQR",
-			previewCode,
-		}),
-		makePassBarcode({
-			code,
-			format: "PKBarcodeFormatPDF417",
-			previewCode,
-		}),
-		makePassBarcode({
-			code,
-			format: "PKBarcodeFormatAztec",
-			previewCode,
-		}),
-		makePassBarcode({
-			code,
-			format: "PKBarcodeFormatCode128",
-			previewCode,
-		}),
-	] as const;
 }
 
 async function buildRenderedStripAssets({
@@ -722,14 +679,6 @@ function normalizeWebsiteURL(value: string): URL {
 	}
 
 	return websiteURL;
-}
-
-function normalizeWebsiteForSerialNumber(website?: string): string {
-	if (!website) {
-		return "";
-	}
-
-	return normalizeWebsiteURL(website).origin;
 }
 
 function truncate(value: string, length: number): string {

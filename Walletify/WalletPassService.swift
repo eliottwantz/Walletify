@@ -16,7 +16,6 @@ struct WalletPassService {
     companyName: String,
     codeValue: String,
     detectedType: String,
-    capturedImageData: Data?,
     websiteURL: String
   ) async throws -> PKPass {
     var request = URLRequest(url: endpoint)
@@ -29,7 +28,6 @@ struct WalletPassService {
         company: companyName,
         code: codeValue,
         detectedType: detectedType,
-        capturedImageBase64: capturedImageData?.base64EncodedString(),
         website: trimmedWebsiteURL.isEmpty ? nil : trimmedWebsiteURL
       )
     )
@@ -79,7 +77,6 @@ private struct CreatePassRequest: Encodable {
   let company: String
   let code: String
   let detectedType: String
-  let capturedImageBase64: String?
   let website: String?
 }
 

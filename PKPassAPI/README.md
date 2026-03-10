@@ -5,7 +5,6 @@ Minimal Bun/Elysia backend for generating signed Apple Wallet passes for Walleti
 ## Endpoints
 
 - `GET /health`
-- `GET /pass?company=Acme&code=12345`
 - `POST /pass`
 
 `POST /pass` body:
@@ -14,11 +13,12 @@ Minimal Bun/Elysia backend for generating signed Apple Wallet passes for Walleti
 {
   "company": "Acme",
   "code": "12345",
+  "detectedType": "org.iso.QRCode",
   "website": "https://acme.example"
 }
 ```
 
-`website` is optional. When present, the API attempts to use the site's favicon as the pass logo image. If no website is provided, or no favicon is resolved, the pass is generated without a logo image.
+`detectedType` is required. `website` is optional. When present, the API attempts to use the site's favicon as the pass logo image. If no website is provided, or no favicon is resolved, the pass is generated without a logo image.
 
 Successful responses return a `.pkpass` payload with content type `application/vnd.apple.pkpass`.
 

@@ -24,7 +24,6 @@ private enum PhotoBarcodeDetectionResult: Sendable {
 struct BarcodeScanResult: Sendable {
   let code: String
   let detectedType: String
-  let capturedImageData: Data?
 }
 
 struct BarcodeScannerView: UIViewControllerRepresentable {
@@ -299,8 +298,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
 
   private func handleDetectedCode(
     _ value: String,
-    detectedType: String,
-    capturedImageData: Data? = nil
+    detectedType: String
   ) {
     if session.isRunning {
       session.stopRunning()
@@ -310,8 +308,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     onCodeFound?(
       BarcodeScanResult(
         code: value,
-        detectedType: detectedType,
-        capturedImageData: capturedImageData
+        detectedType: detectedType
       )
     )
   }
