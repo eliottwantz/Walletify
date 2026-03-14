@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		556DF5782F60827A008CCF31 /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 556DF5772F60827A008CCF31 /* InjectionNext */; };
+		55AB77F32F60D032000F31FB /* InjectionNext in Frameworks */ = {isa = PBXBuildFile; productRef = 55AB77F22F60D032000F31FB /* InjectionNext */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,7 +26,7 @@
 		55BF55F42F5CEFD000EED0AE /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				556DF5782F60827A008CCF31 /* InjectionNext in Frameworks */,
+				55AB77F32F60D032000F31FB /* InjectionNext in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -66,7 +66,7 @@
 			);
 			name = Walletify;
 			packageProductDependencies = (
-				556DF5772F60827A008CCF31 /* InjectionNext */,
+				55AB77F22F60D032000F31FB /* InjectionNext */,
 			);
 			productName = Walletify;
 			productReference = 55BF55F72F5CEFD000EED0AE /* Walletify.app */;
@@ -97,7 +97,7 @@
 			mainGroup = 55BF55EE2F5CEFD000EED0AE;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				556DF5762F60827A008CCF31 /* XCRemoteSwiftPackageReference "InjectionNext" */,
+				55AB77F12F60D032000F31FB /* XCRemoteSwiftPackageReference "InjectionNext" */,
 			);
 			preferredProjectObjectVersion = 100;
 			productRefGroup = 55BF55F82F5CEFD000EED0AE /* Products */;
@@ -353,7 +353,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		556DF5762F60827A008CCF31 /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
+		55AB77F12F60D032000F31FB /* XCRemoteSwiftPackageReference "InjectionNext" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/johnno1962/InjectionNext";
 			requirement = {
@@ -364,9 +364,9 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		556DF5772F60827A008CCF31 /* InjectionNext */ = {
+		55AB77F22F60D032000F31FB /* InjectionNext */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 556DF5762F60827A008CCF31 /* XCRemoteSwiftPackageReference "InjectionNext" */;
+			package = 55AB77F12F60D032000F31FB /* XCRemoteSwiftPackageReference "InjectionNext" */;
 			productName = InjectionNext;
 		};
 /* End XCSwiftPackageProductDependency section */

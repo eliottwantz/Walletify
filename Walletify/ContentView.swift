@@ -23,10 +23,10 @@ struct ContentView: View {
   @FocusState private var isKeyboardFocused: Bool
 
   private let passService = WalletPassService()
-
-  #if DEBUG
-    @ObserveInjection var forceRedraw
-  #endif
+//
+//  #if DEBUG
+//    @ObserveInjection var forceRedraw
+//  #endif
 
   var body: some View {
     NavigationStack {
@@ -54,7 +54,7 @@ struct ContentView: View {
             }
 
             LabeledContent("Code", value: codeValue)
-              .font(.footnote.monospaced())
+//              .font(.footnote.monospaced())
               .textSelection(.enabled)
               .foregroundStyle(codeValue.isEmpty ? .secondary : .primary)
             Button {
@@ -127,7 +127,7 @@ struct ContentView: View {
         Text(errorMessage ?? "Unknown error")
       }
     }
-    .enableInjection()
+//    .enableInjection()
   }
 
   private var isSaveDisabled: Bool {

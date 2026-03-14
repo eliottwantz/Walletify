@@ -45,11 +45,11 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
 {
   private static let preferredMetadataObjectTypes: [AVMetadataObject.ObjectType] = [
     .qr,
-    .microQR,
+//    .microQR,
     .aztec,
     .pdf417,
-    .microPDF417,
-    .dataMatrix,
+//    .microPDF417,
+//    .dataMatrix,
     .ean8,
     .ean13,
     .upce,
@@ -60,9 +60,9 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     .interleaved2of5,
     .itf14,
     .codabar,
-    .gs1DataBar,
-    .gs1DataBarExpanded,
-    .gs1DataBarLimited,
+//    .gs1DataBar,
+//    .gs1DataBarExpanded,
+//    .gs1DataBarLimited,
   ]
 
   private static let supportedVisionSymbologies: [VNBarcodeSymbology] = [
