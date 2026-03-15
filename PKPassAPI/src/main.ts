@@ -13,7 +13,6 @@ const PASS_ASSET_CANDIDATES = [
 	`${import.meta.dir}/assets/pass`,
 	`${import.meta.dir}/../src/assets/pass`,
 ];
-const DEFAULT_CERTS_PATH = `${RUNTIME_ROOT}/certs`;
 const DEFAULT_PORT = 8080;
 const DEFAULT_PASS_COLORS = {
 	background: "rgb(255, 255, 255)",
@@ -169,32 +168,24 @@ const runtimeEnvSchema = z.object({
 		const trimmed = value.trim();
 		return trimmed === "" ? undefined : Number(trimmed);
 	}, z.number().int().min(1).max(65535).default(DEFAULT_PORT)),
-	SIGNER_CERT_BASE64: optionalTrimmedString,
-	SIGNER_CERT_PATH: optionalTrimmedString,
-	SIGNER_CERT_PEM: optionalTrimmedString,
-	SIGNER_KEY_BASE64: optionalTrimmedString,
-	SIGNER_KEY_PASSPHRASE: optionalTrimmedString,
-	SIGNER_KEY_PATH: optionalTrimmedString,
-	SIGNER_KEY_PEM: optionalTrimmedString,
+	SIGNER_CERT: requiredTrimmedString(
+		"Missing required environment variable SIGNER_CERT.",
+	),
+	SIGNER_KEY: requiredTrimmedString(
+		"Missing required environment variable SIGNER_KEY.",
+	),
+	SIGNER_KEY_PASSPHRASE: requiredTrimmedString(
+		"Missing required environment variable SIGNER_KEY_PASSPHRASE.",
+	),
 	TEAM_IDENTIFIER: requiredTrimmedString(
 		"Missing required environment variable TEAM_IDENTIFIER.",
 	),
-	WWDR_CERT_BASE64: optionalTrimmedString,
-	WWDR_CERT_PATH: optionalTrimmedString,
-	WWDR_CERT_PEM: optionalTrimmedString,
+	WWDR_CERT: requiredTrimmedString(
+		"Missing required environment variable WWDR_CERT.",
+	),
 });
 
 type RuntimeEnv = z.infer<typeof runtimeEnvSchema>;
-type CertificateEnvKey =
-	| "SIGNER_CERT_BASE64"
-	| "SIGNER_CERT_PATH"
-	| "SIGNER_CERT_PEM"
-	| "SIGNER_KEY_BASE64"
-	| "SIGNER_KEY_PATH"
-	| "SIGNER_KEY_PEM"
-	| "WWDR_CERT_BASE64"
-	| "WWDR_CERT_PATH"
-	| "WWDR_CERT_PEM";
 
 const runtimeEnv = parseRuntimeEnv(Bun.env);
 const runtimeConfig = await getRuntimeConfig();
@@ -697,34 +688,17 @@ async function getRuntimeConfig(): Promise<RuntimeConfig> {
 
 async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 	const assetPath = await resolvePassAssetPath();
-	const [icon, icon2x, icon3x, wwdr, signerCert, signerKey] = await Promise.all(
-		[
-			readRequiredFile(`${assetPath}/icon.png`),
-			readRequiredFile(`${assetPath}/icon@2x.png`),
-			readRequiredFile(`${assetPath}/icon@3x.png`),
-			readCertificate({
-				env: runtimeEnv,
-				base64Env: "WWDR_CERT_BASE64",
-				defaultPath: `${DEFAULT_CERTS_PATH}/wwdr.pem`,
-				pathEnv: "WWDR_CERT_PATH",
-				rawEnv: "WWDR_CERT_PEM",
-			}),
-			readCertificate({
-				env: runtimeEnv,
-				base64Env: "SIGNER_CERT_BASE64",
-				defaultPath: `${DEFAULT_CERTS_PATH}/signerCert.pem`,
-				pathEnv: "SIGNER_CERT_PATH",
-				rawEnv: "SIGNER_CERT_PEM",
-			}),
-			readCertificate({
-				env: runtimeEnv,
-				base64Env: "SIGNER_KEY_BASE64",
-				defaultPath: `${DEFAULT_CERTS_PATH}/signerKey.pem`,
-				pathEnv: "SIGNER_KEY_PATH",
-				rawEnv: "SIGNER_KEY_PEM",
-			}),
-		],
+	const [icon, icon2x, icon3x] = await Promise.all([
+		readRequiredFile(`${assetPath}/icon.png`),
+		readRequiredFile(`${assetPath}/icon@2x.png`),
+		readRequiredFile(`${assetPath}/icon@3x.png`),
+	]);
+	const wwdr = readCertificateFromEnv("WWDR_CERT", runtimeEnv.WWDR_CERT);
+	const signerCert = readCertificateFromEnv(
+		"SIGNER_CERT",
+		runtimeEnv.SIGNER_CERT,
 	);
+	const signerKey = readCertificateFromEnv("SIGNER_KEY", runtimeEnv.SIGNER_KEY);
 
 	return {
 		assets: {
@@ -777,31 +751,17 @@ async function resolvePassAssetPath(): Promise<string> {
 	);
 }
 
-async function readCertificate({
-	env,
-	base64Env,
-	defaultPath,
-	pathEnv,
-	rawEnv,
-}: {
-	env: RuntimeEnv;
-	base64Env: CertificateEnvKey;
-	defaultPath: string;
-	pathEnv: CertificateEnvKey;
-	rawEnv: CertificateEnvKey;
-}): Promise<Buffer> {
-	const base64Value = env[base64Env];
-	if (base64Value) {
-		return Buffer.from(base64Value, "base64");
+function readCertificateFromEnv(
+	name: "SIGNER_CERT" | "SIGNER_KEY" | "WWDR_CERT",
+	value: string,
+): Buffer {
+	try {
+		return Buffer.from(value.replaceAll("\\n", "\n"), "utf8");
+	} catch (error) {
+		throw new ConfigError(
+			`Failed reading certificate from environment variable ${name}: ${stringifyError(error)}`,
+		);
 	}
-
-	const rawValue = env[rawEnv];
-	if (rawValue) {
-		return Buffer.from(rawValue.replaceAll("\\n", "\n"), "utf8");
-	}
-
-	const configuredPath = env[pathEnv] || defaultPath;
-	return readRequiredFile(configuredPath);
 }
 
 function parseRuntimeEnv(env: Record<string, string | undefined>): RuntimeEnv {

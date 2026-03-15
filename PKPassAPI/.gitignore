@@ -2,3 +2,6 @@
 certs/
 node_modules/
 server
+.env
+.env.*
+!.env.schema

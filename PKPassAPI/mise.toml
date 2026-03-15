@@ -2,13 +2,13 @@
 cloudflared = "latest"
 
 [tasks.tunnel]
-run = "dotenvx run -f .env.cloudflare -- sh -c 'cloudflared tunnel run --token \"$CLOUDFLARED_TOKEN\"'"
+run = "cloudflared tunnel run --token $(op read \"op://Secrets/Cloudflare Tunnel Token/credential\")"
 
 [tasks.dev]
-run = "dotenvx run -f .env -f .env.secrets -- bun run --watch src/main.ts"
+run = "varlock run -- bun run --watch src/main.ts"
 
 [tasks.start]
-run = "bun run build && dotenvx run -f .env -f .env.secrets -- ./server"
+run = "bun run build && varlock run -- ./server"
 
 [tasks.debug]
-run = "dotenvx run -f .env -f .env.secrets -- bun run --inspect-brk src/main.ts"
+run = "varlock run -- bun run --inspect-brk src/main.ts"
