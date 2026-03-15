@@ -13,12 +13,6 @@ const PASS_ASSET_CANDIDATES = [
 	`${import.meta.dir}/assets/pass`,
 	`${import.meta.dir}/../src/assets/pass`,
 ];
-const DEFAULT_PORT = 8080;
-const DEFAULT_PASS_COLORS = {
-	background: "rgb(255, 255, 255)",
-	foreground: "rgb(60, 60, 60)",
-	label: "rgb(241, 192, 45)",
-} as const;
 
 type RuntimeConfig = {
 	assets: Record<string, Buffer>;
@@ -146,48 +140,6 @@ const passRequestSchema = z.object({
 
 type PassRequest = z.infer<typeof passRequestSchema>;
 
-const runtimeEnvSchema = z.object({
-	ORGANIZATION_NAME: requiredTrimmedString(
-		"Missing required environment variable ORGANIZATION_NAME.",
-	),
-	PASS_BACKGROUND_COLOR: optionalTrimmedString.default(
-		DEFAULT_PASS_COLORS.background,
-	),
-	PASS_FOREGROUND_COLOR: optionalTrimmedString.default(
-		DEFAULT_PASS_COLORS.foreground,
-	),
-	PASS_LABEL_COLOR: optionalTrimmedString.default(DEFAULT_PASS_COLORS.label),
-	PASS_TYPE_IDENTIFIER: requiredTrimmedString(
-		"Missing required environment variable PASS_TYPE_IDENTIFIER.",
-	),
-	PORT: z.preprocess((value) => {
-		if (typeof value !== "string") {
-			return value;
-		}
-
-		const trimmed = value.trim();
-		return trimmed === "" ? undefined : Number(trimmed);
-	}, z.number().int().min(1).max(65535).default(DEFAULT_PORT)),
-	SIGNER_CERT: requiredTrimmedString(
-		"Missing required environment variable SIGNER_CERT.",
-	),
-	SIGNER_KEY: requiredTrimmedString(
-		"Missing required environment variable SIGNER_KEY.",
-	),
-	SIGNER_KEY_PASSPHRASE: requiredTrimmedString(
-		"Missing required environment variable SIGNER_KEY_PASSPHRASE.",
-	),
-	TEAM_IDENTIFIER: requiredTrimmedString(
-		"Missing required environment variable TEAM_IDENTIFIER.",
-	),
-	WWDR_CERT: requiredTrimmedString(
-		"Missing required environment variable WWDR_CERT.",
-	),
-});
-
-type RuntimeEnv = z.infer<typeof runtimeEnvSchema>;
-
-const runtimeEnv = parseRuntimeEnv(Bun.env);
 const runtimeConfig = await getRuntimeConfig();
 
 const app = new Elysia()
@@ -199,7 +151,7 @@ const app = new Elysia()
 		status: "ok",
 	}))
 	.post("/pass", async ({ body, set }) => handlePassRequest(body, set))
-	.listen(runtimeEnv.PORT);
+	.listen(Bun.env.PORT);
 
 console.log(`Listening on ${app.server?.url}`);
 
@@ -693,12 +645,9 @@ async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 		readRequiredFile(`${assetPath}/icon@2x.png`),
 		readRequiredFile(`${assetPath}/icon@3x.png`),
 	]);
-	const wwdr = readCertificateFromEnv("WWDR_CERT", runtimeEnv.WWDR_CERT);
-	const signerCert = readCertificateFromEnv(
-		"SIGNER_CERT",
-		runtimeEnv.SIGNER_CERT,
-	);
-	const signerKey = readCertificateFromEnv("SIGNER_KEY", runtimeEnv.SIGNER_KEY);
+	const wwdr = readCertificateFromEnv("WWDR_CERT", Bun.env.WWDR_CERT);
+	const signerCert = readCertificateFromEnv("SIGNER_CERT", Bun.env.SIGNER_CERT);
+	const signerKey = readCertificateFromEnv("SIGNER_KEY", Bun.env.SIGNER_KEY);
 
 	return {
 		assets: {
@@ -709,17 +658,17 @@ async function loadRuntimeConfig(): Promise<RuntimeConfig> {
 		certificates: {
 			signerCert,
 			signerKey,
-			signerKeyPassphrase: runtimeEnv.SIGNER_KEY_PASSPHRASE,
+			signerKeyPassphrase: Bun.env.SIGNER_KEY_PASSPHRASE,
 			wwdr,
 		},
 		colors: {
-			background: runtimeEnv.PASS_BACKGROUND_COLOR,
-			foreground: runtimeEnv.PASS_FOREGROUND_COLOR,
-			label: runtimeEnv.PASS_LABEL_COLOR,
+			background: Bun.env.PASS_BACKGROUND_COLOR,
+			foreground: Bun.env.PASS_FOREGROUND_COLOR,
+			label: Bun.env.PASS_LABEL_COLOR,
 		},
-		organizationName: runtimeEnv.ORGANIZATION_NAME,
-		passTypeIdentifier: runtimeEnv.PASS_TYPE_IDENTIFIER,
-		teamIdentifier: runtimeEnv.TEAM_IDENTIFIER,
+		organizationName: Bun.env.ORGANIZATION_NAME,
+		passTypeIdentifier: Bun.env.PASS_TYPE_IDENTIFIER,
+		teamIdentifier: Bun.env.TEAM_IDENTIFIER,
 	};
 }
 
@@ -762,33 +711,6 @@ function readCertificateFromEnv(
 			`Failed reading certificate from environment variable ${name}: ${stringifyError(error)}`,
 		);
 	}
-}
-
-function parseRuntimeEnv(env: Record<string, string | undefined>): RuntimeEnv {
-	const result = runtimeEnvSchema.safeParse(env);
-
-	if (result.success) {
-		return result.data;
-	}
-
-	const firstIssue = result.error.issues[0];
-	if (!firstIssue) {
-		throw new ConfigError("Invalid environment configuration.");
-	}
-
-	const field = firstIssue.path[0];
-
-	if (field === "PORT") {
-		throw new ConfigError(
-			"Environment variable PORT must be an integer between 1 and 65535.",
-		);
-	}
-
-	if (typeof field === "string") {
-		throw new ConfigError(firstIssue.message);
-	}
-
-	throw new ConfigError("Invalid environment configuration.");
 }
 
 function stringifyError(error: unknown): string {
