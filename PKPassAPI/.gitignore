@@ -5,3 +5,4 @@ server
 .env
 .env.*
 !.env.schema
+dist/

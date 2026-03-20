@@ -1,4 +1,4 @@
-FROM oven/bun:1 AS builder
+FROM oven/bun:canary-alpine AS builder
 
 WORKDIR /app
 
@@ -6,38 +6,26 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install
 
-# Build a standalone server binary.
 COPY src ./src
 
 ENV NODE_ENV=production
 
 RUN bun run build
 
-FROM debian:bookworm-slim AS certs
+FROM alpine AS final
 
 WORKDIR /app
 
-# Add certificates for outbound HTTPS (WebAuthn-related services, if needed).
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache libgcc libstdc++
+COPY .env.schema .env.schema
+COPY env.d.ts /app/env.d.ts
+COPY src/assets /app/src/assets
+COPY --from=builder /app/dist/server /app/server
+COPY --from=ghcr.io/dmno-dev/varlock:latest /usr/local/bin/ /usr/local/bin/
 
-FROM debian:bookworm-slim AS final
-
-WORKDIR /app
-
-RUN groupadd --system app \
-  && useradd --system --gid app --create-home app
-
-COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder --chown=app:app /app/server /app/server
-COPY --from=builder --chown=app:app /app/src/assets /app/src/assets
-COPY --chown=app:app certs /app/certs
-
-EXPOSE 8080
-
-USER app
+EXPOSE 8080/tcp
 
 ENV NODE_ENV=production
+ENV APP_ENV=prod
 
-CMD ["/app/server"]
+CMD ["varlock", "run", "--", "/app/server"]

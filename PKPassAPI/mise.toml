@@ -2,13 +2,13 @@
 cloudflared = "latest"
 
 [tasks.tunnel]
-run = "cloudflared tunnel run --token $(op read \"op://Secrets/Cloudflare Tunnel Token/credential\")"
+run = "cloudflared tunnel run --token $(op read \"op://Personal/Cloudflare Tunnel Token/credential\")"
 
 [tasks.dev]
-run = "varlock run -- bun run --watch src/main.ts"
+run = "varlock run -- bun run dev"
 
 [tasks.start]
 run = "bun run build && varlock run -- ./server"
 
 [tasks.debug]
-run = "varlock run -- bun run --inspect-brk src/main.ts"
+run = "varlock run -- bun run inspect"

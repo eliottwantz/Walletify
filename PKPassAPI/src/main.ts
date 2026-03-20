@@ -3,6 +3,8 @@ import { Elysia } from "elysia";
 import { PKPass } from "passkit-generator";
 import { z } from "zod";
 
+console.log(`Using APP_ENV=${Bun.env.APP_ENV}`);
+
 const APPLE_PKPASS_MIME = "application/vnd.apple.pkpass";
 const FAVICON_FETCH_TIMEOUT_MS = 5_000;
 const FAVICON_SIZE = 256;
@@ -141,6 +143,7 @@ const passRequestSchema = z.object({
 type PassRequest = z.infer<typeof passRequestSchema>;
 
 const runtimeConfig = await getRuntimeConfig();
+console.log("Runtime configuration loaded successfully.");
 
 const app = new Elysia()
 	.get("/", () => ({
@@ -691,6 +694,7 @@ async function readRequiredFile(filePath: string): Promise<Buffer> {
 async function resolvePassAssetPath(): Promise<string> {
 	for (const candidate of PASS_ASSET_CANDIDATES) {
 		if (await Bun.file(`${candidate}/icon.png`).exists()) {
+			console.log(`Found pass assets at: ${candidate}`);
 			return candidate;
 		}
 	}

@@ -1,0 +1,8 @@
+*
+!.env.schema
+!src/
+!bun.lock
+!package.json
+!bunfig.toml
+!tsconfig.json
+!env.d.ts
