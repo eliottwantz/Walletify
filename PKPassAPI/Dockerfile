@@ -17,11 +17,11 @@ FROM alpine AS final
 WORKDIR /app
 
 RUN apk add --no-cache libgcc libstdc++
+COPY --from=ghcr.io/dmno-dev/varlock:latest /usr/local/bin/ /usr/local/bin/
 COPY .env.schema .env.schema
 COPY env.d.ts /app/env.d.ts
 COPY src/assets /app/src/assets
 COPY --from=builder /app/dist/server /app/server
-COPY --from=ghcr.io/dmno-dev/varlock:latest /usr/local/bin/ /usr/local/bin/
 
 EXPOSE 8080/tcp
 
