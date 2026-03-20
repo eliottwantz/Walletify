@@ -10,7 +10,7 @@ import Foundation
 import PassKit
 
 struct WalletPassService {
-  private let endpoint = URL(string: "https://local-walletify.develiott.com/pass")!
+  private let endpoint = Environment.API_URL
 
   func createPass(
     companyName: String,
