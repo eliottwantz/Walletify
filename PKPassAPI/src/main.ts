@@ -286,11 +286,6 @@ async function buildPassBuffer({
 	}
 
 	const passBuffer = pass.getAsBuffer();
-	await writeDebugArtifacts({
-		stripImage: stripAssets?.["strip@3x.png"] ?? stripAssets?.["strip.png"],
-		passBuffer,
-		serialNumber,
-	});
 	return passBuffer;
 }
 
@@ -326,33 +321,6 @@ async function buildPassAssets(
 	}
 
 	return assets;
-}
-
-async function writeDebugArtifacts({
-	stripImage,
-	passBuffer,
-	serialNumber,
-}: {
-	stripImage?: Buffer;
-	passBuffer: Buffer;
-	serialNumber: string;
-}): Promise<void> {
-	if (stripImage) {
-		const imagePath = `/tmp/walletify-strip-${serialNumber}.png`;
-		console.log("Generated strip image:", {
-			byteLength: stripImage.byteLength,
-			headerHex: stripImage.subarray(0, 16).toString("hex"),
-			path: imagePath,
-		});
-		await Bun.write(imagePath, stripImage);
-	}
-
-	const passPath = `/tmp/walletify-pass-${serialNumber}.pkpass`;
-	console.log("Writing generated pass debug artifact:", {
-		byteLength: passBuffer.byteLength,
-		path: passPath,
-	});
-	await Bun.write(passPath, passBuffer);
 }
 
 function resolveBarcodeStrategy(detectedType: string): BarcodeStrategy {
