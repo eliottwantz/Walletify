@@ -13,7 +13,7 @@ enum Environment {
     #if DEBUG
       return URL(string: "https://local-walletify.develiott.com/pass")!
     #else
-      return URL(string: "https://walletify.develiott.com/")!
+      return URL(string: "https://walletify.develiott.com/pass")!
     #endif
   }
 }
