@@ -228,6 +228,7 @@ async function buildPassBuffer({
 	website,
 }: PassRequest): Promise<Buffer> {
 	console.log("Building pass for:", { company, code, website, detectedType });
+	const groupingIdentifier = crypto.randomUUID();
 	const serialNumber = buildSerialNumber({ company, code });
 	const barcodeStrategy = resolveBarcodeStrategy(detectedType);
 	console.log("Resolved barcode strategy:", barcodeStrategy);
@@ -249,6 +250,7 @@ async function buildPassBuffer({
 		description: company,
 		formatVersion: 1,
 		foregroundColor: runtimeConfig.colors.foreground,
+		groupingIdentifier,
 		labelColor: runtimeConfig.colors.label,
 		logoText: company,
 		organizationName: company,
@@ -257,15 +259,17 @@ async function buildPassBuffer({
 		teamIdentifier: runtimeConfig.teamIdentifier,
 	});
 
-	console.log("Creating pass with serial number:", serialNumber);
+	console.log(
+		"Creating pass with serial number:",
+		serialNumber,
+		"and grouping identifier:",
+		groupingIdentifier,
+	);
 
-	pass.type = "storeCard";
-	if (barcodeStrategy.kind === "native") {
-		pass.type = "generic";
-	}
+	// Wallet groups generic and store-card passes that share a pass type.
+	// Using event tickets with unique grouping identifiers keeps each saved pass separate.
+	pass.type = "eventTicket";
 	populateFrontFields(pass, {
-		barcodeStrategy,
-		company,
 		code,
 	});
 	populateBackFields(pass, {
@@ -317,6 +321,9 @@ async function buildPassAssets(
 	}
 
 	if (stripAssets) {
+		delete assets["thumbnail.png"];
+		delete assets["thumbnail@2x.png"];
+		delete assets["thumbnail@3x.png"];
 		Object.assign(assets, stripAssets);
 	}
 
@@ -348,31 +355,7 @@ function resolveBarcodeStrategy(detectedType: string): BarcodeStrategy {
 	};
 }
 
-function populateFrontFields(
-	pass: PKPass,
-	{
-		barcodeStrategy,
-		company,
-		code,
-	}: {
-		barcodeStrategy: BarcodeStrategy;
-		company: string;
-		code: string;
-	},
-): void {
-	if (barcodeStrategy.kind === "native") {
-		pass.primaryFields.push({
-			key: "company",
-			label: "Company",
-			value: company,
-		});
-	} else {
-		pass.secondaryFields.push({
-			key: "company",
-			label: "Company",
-			value: company,
-		});
-	}
+function populateFrontFields(pass: PKPass, { code }: { code: string }): void {
 	pass.headerFields.push({
 		key: "source",
 		label: "Made with",
