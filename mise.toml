@@ -1,0 +1,14 @@
+[tools]
+tuist = "latest"
+
+[tasks.build]
+run = "tuist xcodebuild build -scheme Walletify -project Walletify.xcodeproj -configuration Release -destination 'generic/platform=iOS'"
+description = "Builds the app in release mode"
+
+[tasks.release]
+run = "tuist share Walletify --configuration Release --platforms iOS"
+description = "Creates a Tuist preview for the latest release build"
+
+[tasks."tuist:web"]
+run = "tuist project show --web"
+description = "Opens the Tuist web page for the project"
