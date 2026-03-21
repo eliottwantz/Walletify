@@ -26,10 +26,10 @@ COPY --from=deps /usr/lib /usr/lib
 COPY --from=deps /usr/share/ca-certificates /usr/share/ca-certificates
 COPY --from=deps /etc/ca-certificates /etc/ca-certificates
 COPY --from=deps /etc/ca-certificates.conf /etc/ca-certificates.conf
-COPY --from=builder /app/dist/server /app/server
-COPY .env.schema .env.schema
-COPY env.d.ts /app/env.d.ts
-COPY src/assets /app/src/assets
+COPY --chown=nonroot:nonroot --from=builder /app/dist/server /app/server
+COPY --chown=nonroot:nonroot .env.schema .env.schema
+COPY --chown=nonroot:nonroot env.d.ts env.d.ts
+COPY --chown=nonroot:nonroot src/assets src/assets
 
 EXPOSE 8080/tcp
 
