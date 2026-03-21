@@ -1,0 +1,17 @@
+schemaVersion: 1
+enabledWorkflows:
+  - simulator
+  - debugging
+  - device
+  - logging
+  - project-discovery
+  - simulator-management
+  - xcode-ide
+debug: true
+sentryDisabled: true
+sessionDefaults:
+  projectPath: Walletify.xcodeproj
+  scheme: Walletify
+  deviceId: F3968B01-8621-597C-93A6-4A4514802442
+  simulatorId: BA8B48F5-4386-47F0-AC83-5B3192E3FC58
+  simulatorName: iPhone 17 Pro
