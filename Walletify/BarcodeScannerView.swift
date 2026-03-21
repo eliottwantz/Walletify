@@ -7,71 +7,312 @@
 //
 
 import AVFoundation
+import Observation
 import SwiftUI
 import Vision
-
-private struct DetectedPhotoBarcode: Sendable {
-  let value: String
-  let detectedType: String
-}
-
-private enum PhotoBarcodeDetectionResult: Sendable {
-  case observations([DetectedPhotoBarcode])
-  case notFound
-  case failure(String)
-}
+import VisionKit
 
 struct BarcodeScanResult: Sendable {
   let code: String
   let detectedType: String
 }
 
-struct BarcodeScannerView: UIViewControllerRepresentable {
-  let onCodeFound: (BarcodeScanResult) -> Void
+struct BarcodeScannerView: View {
   let onCancel: () -> Void
 
-  func makeUIViewController(context: Context) -> ScannerViewController {
-    let controller = ScannerViewController()
-    controller.onCodeFound = onCodeFound
-    controller.onCancel = onCancel
+  @State private var model: BarcodeScannerModel
+
+  init(
+    onCodeFound: @escaping (BarcodeScanResult) -> Void,
+    onCancel: @escaping () -> Void
+  ) {
+    self.onCancel = onCancel
+    _model = State(initialValue: BarcodeScannerModel(onCodeFound: onCodeFound))
+  }
+
+  var body: some View {
+    ZStack(alignment: .topTrailing) {
+      Group {
+        if model.showsScanner {
+          BarcodeDataScannerView(
+            isScanningEnabled: model.isScanningEnabled,
+            onCodeFound: model.handleRecognizedCode,
+            onScannerUnavailable: model.handleScannerUnavailable
+          )
+          .ignoresSafeArea()
+          .statusBarHidden()
+        } else {
+          Color.black
+            .ignoresSafeArea()
+        }
+      }
+
+      VStack(spacing: 0) {
+        HStack {
+          Spacer()
+          closeButton
+        }
+
+        Spacer()
+
+        statusMessage
+      }
+      .padding(.horizontal, 20)
+      .padding(.top, 16)
+      .padding(.bottom, 36)
+    }
+    .background(.black)
+    .task {
+      await model.prepare()
+    }
+  }
+
+  private var closeButton: some View {
+    Button(action: onCancel) {
+      Image(systemName: "xmark")
+        .font(.headline)
+        .frame(width: 44, height: 44)
+        .foregroundStyle(.white)
+        .background(.black.opacity(0.45), in: Circle())
+    }
+    .accessibilityLabel("Close scanner")
+  }
+
+  private var statusMessage: some View {
+    Text(model.statusMessage)
+      .font(.subheadline)
+      .foregroundStyle(.white)
+      .multilineTextAlignment(.center)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 12)
+      .frame(maxWidth: .infinity)
+      .background(.black.opacity(0.45), in: .rect(cornerRadius: 16))
+  }
+}
+
+@MainActor
+@Observable
+private final class BarcodeScannerModel {
+  @ObservationIgnored private let onCodeFound: (BarcodeScanResult) -> Void
+
+  @ObservationIgnored private var hasPrepared = false
+
+  @ObservationIgnored private var hasDeliveredResult = false
+
+  private enum Availability {
+    case checking
+    case ready
+    case unavailable
+  }
+
+  private static let readyMessage = "Center the QR or bar code within the frame."
+
+  var statusMessage = "Preparing camera..."
+  var isScanningEnabled = false
+  private var availability: Availability = .checking
+
+  var showsScanner: Bool {
+    availability == .ready
+  }
+
+  init(onCodeFound: @escaping (BarcodeScanResult) -> Void) {
+    self.onCodeFound = onCodeFound
+  }
+
+  func prepare() async {
+    guard !hasPrepared else { return }
+    hasPrepared = true
+
+    guard DataScannerViewController.isSupported else {
+      handleScannerUnavailable("Barcode scanning is not supported on this device.")
+      return
+    }
+
+    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    case .authorized:
+      finishAuthorization(granted: true)
+    case .notDetermined:
+      statusMessage = "Requesting camera access..."
+      let granted = await requestVideoAccess()
+      finishAuthorization(granted: granted)
+    case .denied, .restricted:
+      handleScannerUnavailable("Enable camera access in Settings to scan codes.")
+    @unknown default:
+      handleScannerUnavailable("Camera access is required to scan codes.")
+    }
+  }
+
+  func handleRecognizedCode(_ result: BarcodeScanResult) {
+    guard !hasDeliveredResult else { return }
+
+    hasDeliveredResult = true
+    isScanningEnabled = false
+    statusMessage = "Code detected."
+    onCodeFound(result)
+  }
+
+  func handleScannerUnavailable(_ message: String) {
+    availability = .unavailable
+    isScanningEnabled = false
+    statusMessage = message
+  }
+
+  private func finishAuthorization(granted: Bool) {
+    guard granted else {
+      handleScannerUnavailable("Camera access is required to scan codes.")
+      return
+    }
+
+    guard DataScannerViewController.isAvailable else {
+      handleScannerUnavailable("Barcode scanning is currently unavailable.")
+      return
+    }
+
+    availability = .ready
+    isScanningEnabled = true
+    statusMessage = Self.readyMessage
+  }
+
+  private func requestVideoAccess() async -> Bool {
+    await withCheckedContinuation { continuation in
+      AVCaptureDevice.requestAccess(for: .video) { granted in
+        continuation.resume(returning: granted)
+      }
+    }
+  }
+}
+
+private struct BarcodeDataScannerView: UIViewControllerRepresentable {
+  let isScanningEnabled: Bool
+  let onCodeFound: (BarcodeScanResult) -> Void
+  let onScannerUnavailable: (String) -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(
+      onCodeFound: onCodeFound,
+      onScannerUnavailable: onScannerUnavailable
+    )
+  }
+
+  func makeUIViewController(context: Context) -> DataScannerViewController {
+    let controller = DataScannerViewController(
+      recognizedDataTypes: [
+        .barcode(symbologies: BarcodeScannerSymbologies.supportedVisionSymbologies)
+      ],
+      qualityLevel: .balanced,
+      recognizesMultipleItems: false
+    )
+    controller.delegate = context.coordinator
     return controller
   }
 
-  func updateUIViewController(_: ScannerViewController, context _: Context) {}
+  func updateUIViewController(
+    _ controller: DataScannerViewController,
+    context: Context
+  ) {
+    context.coordinator.onCodeFound = onCodeFound
+    context.coordinator.onScannerUnavailable = onScannerUnavailable
+
+    if isScanningEnabled {
+      guard !controller.isScanning else { return }
+
+      do {
+        try controller.startScanning()
+      } catch {
+        onScannerUnavailable(Self.message(for: error))
+      }
+    } else if controller.isScanning {
+      controller.stopScanning()
+    }
+  }
+
+  static func dismantleUIViewController(
+    _ controller: DataScannerViewController,
+    coordinator _: Coordinator
+  ) {
+    if controller.isScanning {
+      controller.stopScanning()
+    }
+  }
+
+  private static func message(for error: Error) -> String {
+    guard let unavailable = error as? DataScannerViewController.ScanningUnavailable else {
+      return "Barcode scanning is currently unavailable."
+    }
+
+    switch unavailable {
+    case .unsupported:
+      return "Barcode scanning is not supported on this device."
+    case .cameraRestricted:
+      return "Camera access is required to scan codes."
+    @unknown default:
+      return "Barcode scanning is currently unavailable."
+    }
+  }
+
+  @MainActor
+  final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+    var onCodeFound: (BarcodeScanResult) -> Void
+    var onScannerUnavailable: (String) -> Void
+
+    private var hasRecognizedCode = false
+
+    init(
+      onCodeFound: @escaping (BarcodeScanResult) -> Void,
+      onScannerUnavailable: @escaping (String) -> Void
+    ) {
+      self.onCodeFound = onCodeFound
+      self.onScannerUnavailable = onScannerUnavailable
+    }
+
+    func dataScanner(
+      _: DataScannerViewController,
+      didAdd addedItems: [RecognizedItem],
+      allItems _: [RecognizedItem]
+    ) {
+      forwardFirstBarcode(from: addedItems)
+    }
+
+    func dataScanner(
+      _: DataScannerViewController,
+      didUpdate updatedItems: [RecognizedItem],
+      allItems _: [RecognizedItem]
+    ) {
+      forwardFirstBarcode(from: updatedItems)
+    }
+
+    func dataScanner(
+      _: DataScannerViewController,
+      becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
+    ) {
+      onScannerUnavailable(BarcodeDataScannerView.message(for: error))
+    }
+
+    private func forwardFirstBarcode(from items: [RecognizedItem]) {
+      guard !hasRecognizedCode else { return }
+      guard let result = items.lazy.compactMap(Self.scanResult(from:)).first else { return }
+
+      hasRecognizedCode = true
+      onCodeFound(result)
+    }
+
+    private static func scanResult(from item: RecognizedItem) -> BarcodeScanResult? {
+      guard case .barcode(let barcode) = item else { return nil }
+      guard let payload = barcode.payloadStringValue else { return nil }
+
+      return BarcodeScanResult(
+        code: payload,
+        detectedType: barcode.observation.symbology.rawValue
+      )
+    }
+  }
 }
 
-final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate,
-  AVCapturePhotoCaptureDelegate
-{
-  private static let preferredMetadataObjectTypes: [AVMetadataObject.ObjectType] = [
+private enum BarcodeScannerSymbologies {
+  static let supportedVisionSymbologies: [VNBarcodeSymbology] = [
     .qr,
-//    .microQR,
     .aztec,
     .pdf417,
-//    .microPDF417,
-//    .dataMatrix,
-    .ean8,
-    .ean13,
-    .upce,
-    .code39,
-    .code39Mod43,
-    .code93,
-    .code128,
-    .interleaved2of5,
-    .itf14,
-    .codabar,
-//    .gs1DataBar,
-//    .gs1DataBarExpanded,
-//    .gs1DataBarLimited,
-  ]
-
-  private static let supportedVisionSymbologies: [VNBarcodeSymbology] = [
-    .qr,
-//    .microQR,
-    .aztec,
-    .pdf417,
-//    .microPDF417,
-//    .dataMatrix,
     .ean8,
     .ean13,
     .upce,
@@ -86,331 +327,5 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     .i2of5Checksum,
     .itf14,
     .codabar,
-//    .gs1DataBar,
-//    .gs1DataBarExpanded,
-//    .gs1DataBarLimited,
-//    .msiPlessey,
   ]
-
-  var onCodeFound: ((BarcodeScanResult) -> Void)?
-  var onCancel: (() -> Void)?
-
-  private let session = AVCaptureSession()
-  private let previewView = UIView()
-  private let photoOutput = AVCapturePhotoOutput()
-  private let metadataOutput = AVCaptureMetadataOutput()
-  private let statusLabel = UILabel()
-  private let captureButton = UIButton(type: .system)
-  private let closeButton = UIButton(type: .system)
-
-  private var previewLayer: AVCaptureVideoPreviewLayer?
-  private var isSessionConfigured = false
-  private var isProcessingCapture = false
-
-  private static func supportedMetadataObjectTypes(
-    from availableTypes: [AVMetadataObject.ObjectType]
-  ) -> [AVMetadataObject.ObjectType] {
-    let availableTypes = Set(availableTypes)
-    return preferredMetadataObjectTypes.filter(availableTypes.contains)
-  }
-
-  override func viewDidLoad() {
-    super.viewDidLoad()
-    view.backgroundColor = .black
-    setupLayout()
-    updateCaptureAvailability()
-    configureCameraAccess()
-  }
-
-  override func viewDidLayoutSubviews() {
-    super.viewDidLayoutSubviews()
-    previewLayer?.frame = previewView.bounds
-  }
-
-  override func viewWillAppear(_ animated: Bool) {
-    super.viewWillAppear(animated)
-    guard isSessionConfigured, !session.isRunning else { return }
-    session.startRunning()
-  }
-
-  override func viewWillDisappear(_ animated: Bool) {
-    super.viewWillDisappear(animated)
-    if session.isRunning {
-      session.stopRunning()
-    }
-  }
-
-  private func setupLayout() {
-    previewView.translatesAutoresizingMaskIntoConstraints = false
-    previewView.backgroundColor = .black
-    view.addSubview(previewView)
-
-    statusLabel.translatesAutoresizingMaskIntoConstraints = false
-    statusLabel.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-    statusLabel.font = .preferredFont(forTextStyle: .subheadline)
-    statusLabel.layer.cornerRadius = 12
-    statusLabel.layer.masksToBounds = true
-    statusLabel.numberOfLines = 0
-    statusLabel.text = "Center the code, or tap the camera button to take a photo."
-    statusLabel.textAlignment = .center
-    statusLabel.textColor = .white
-    view.addSubview(statusLabel)
-
-    captureButton.translatesAutoresizingMaskIntoConstraints = false
-    captureButton.backgroundColor = .white
-    captureButton.layer.cornerRadius = 34
-    captureButton.tintColor = .black
-    captureButton.isEnabled = false
-    captureButton.alpha = 0.5
-    captureButton.accessibilityLabel = "Take photo"
-    captureButton.setImage(UIImage(systemName: "camera.fill"), for: .normal)
-    captureButton.addTarget(self, action: #selector(capturePhoto), for: .touchUpInside)
-    view.addSubview(captureButton)
-
-    closeButton.translatesAutoresizingMaskIntoConstraints = false
-    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-    closeButton.layer.cornerRadius = 22
-    closeButton.tintColor = .white
-    closeButton.accessibilityLabel = "Close scanner"
-    closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
-    closeButton.addTarget(self, action: #selector(closeScanner), for: .touchUpInside)
-    view.addSubview(closeButton)
-
-    NSLayoutConstraint.activate([
-      previewView.topAnchor.constraint(equalTo: view.topAnchor),
-      previewView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      previewView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      previewView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-      closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
-      closeButton.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-      closeButton.widthAnchor.constraint(equalToConstant: 44),
-      closeButton.heightAnchor.constraint(equalToConstant: 44),
-
-      captureButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-      captureButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -28),
-      captureButton.widthAnchor.constraint(equalToConstant: 68),
-      captureButton.heightAnchor.constraint(equalToConstant: 68),
-
-      statusLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
-      statusLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-      statusLabel.bottomAnchor.constraint(equalTo: captureButton.topAnchor, constant: -24),
-    ])
-  }
-
-  private func configureCameraAccess() {
-    switch AVCaptureDevice.authorizationStatus(for: .video) {
-    case .authorized:
-      configureSession()
-    case .notDetermined:
-      AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-        Task { @MainActor [weak self] in
-          guard let self else { return }
-
-          if granted {
-            self.configureSession()
-          } else {
-            self.showUnavailableState(message: "Camera access is required to scan codes.")
-          }
-        }
-      }
-    default:
-      showUnavailableState(message: "Enable camera access in Settings to scan codes.")
-    }
-  }
-
-  private func configureSession() {
-    guard !isSessionConfigured else {
-      if !session.isRunning {
-        session.startRunning()
-      }
-      return
-    }
-
-    guard
-      let device = AVCaptureDevice.default(for: .video),
-      let input = try? AVCaptureDeviceInput(device: device),
-      session.canAddInput(input)
-    else {
-      showUnavailableState(message: "Unable to access the camera.")
-      return
-    }
-
-    session.beginConfiguration()
-    session.sessionPreset = .photo
-    session.addInput(input)
-
-    guard session.canAddOutput(metadataOutput), session.canAddOutput(photoOutput) else {
-      session.commitConfiguration()
-      showUnavailableState(message: "Unable to configure barcode scanning.")
-      return
-    }
-
-    session.addOutput(metadataOutput)
-    session.addOutput(photoOutput)
-    metadataOutput.setMetadataObjectsDelegate(self, queue: .main)
-    session.commitConfiguration()
-
-    metadataOutput.metadataObjectTypes = Self.supportedMetadataObjectTypes(
-      from: metadataOutput.availableMetadataObjectTypes
-    )
-    isSessionConfigured = true
-
-    let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-    previewLayer.videoGravity = .resizeAspectFill
-    previewLayer.frame = previewView.bounds
-    previewView.layer.addSublayer(previewLayer)
-    self.previewLayer = previewLayer
-    session.startRunning()
-    updateCaptureAvailability()
-  }
-
-  private func showUnavailableState(message: String) {
-    statusLabel.text = message
-    captureButton.isEnabled = false
-    captureButton.alpha = 0.5
-  }
-
-  private func updateCaptureAvailability() {
-    captureButton.isEnabled = isSessionConfigured && !isProcessingCapture
-    captureButton.alpha = captureButton.isEnabled ? 1 : 0.5
-  }
-
-  @objc
-  private func capturePhoto() {
-    guard isSessionConfigured, !isProcessingCapture else { return }
-
-    isProcessingCapture = true
-    statusLabel.text = "Capturing photo…"
-    updateCaptureAvailability()
-
-    let settings = AVCapturePhotoSettings()
-    if photoOutput.supportedFlashModes.contains(.auto) {
-      settings.flashMode = .auto
-    }
-    photoOutput.capturePhoto(with: settings, delegate: self)
-  }
-
-  @objc
-  private func closeScanner() {
-    onCancel?()
-  }
-
-  private func handleDetectedCode(
-    _ value: String,
-    detectedType: String
-  ) {
-    if session.isRunning {
-      session.stopRunning()
-    }
-
-    print("Detected barcode type: \(detectedType)")
-    onCodeFound?(
-      BarcodeScanResult(
-        code: value,
-        detectedType: detectedType
-      )
-    )
-  }
-
-  private func handlePhotoCaptureResult(imageData: Data?, errorMessage: String?) {
-    guard errorMessage == nil, let imageData else {
-      isProcessingCapture = false
-      statusLabel.text = "Couldn't capture the photo. Try again."
-      updateCaptureAvailability()
-      return
-    }
-
-    statusLabel.text = "Looking for a code…"
-    Task { @MainActor [weak self, imageData] in
-      let detectionResult = await Self.detectPhotoBarcodes(in: imageData)
-      guard let self else { return }
-      self.finishPhotoDetection(detectionResult)
-    }
-  }
-
-  private func finishPhotoDetection(_ detectionResult: PhotoBarcodeDetectionResult) {
-    isProcessingCapture = false
-    updateCaptureAvailability()
-
-    switch detectionResult {
-    case let .observations(observations):
-      guard let firstObservation = observations.first else {
-        statusLabel.text = "No QR or bar code found. Try again."
-        return
-      }
-
-      handleDetectedCode(
-        firstObservation.value,
-        detectedType: firstObservation.detectedType
-      )
-    case .notFound:
-      statusLabel.text = "No QR or bar code found. Try again."
-    case let .failure(message):
-      statusLabel.text = message
-    }
-  }
-
-  private static func detectPhotoBarcodes(in imageData: Data) async -> PhotoBarcodeDetectionResult {
-    let supportedVisionSymbologies = Self.supportedVisionSymbologies
-
-    return await withCheckedContinuation { continuation in
-      DispatchQueue.global(qos: .userInitiated).async {
-        let request = VNDetectBarcodesRequest()
-        request.symbologies = supportedVisionSymbologies
-
-        do {
-          try VNImageRequestHandler(data: imageData).perform([request])
-
-          let observations = (request.results ?? []).compactMap { observation -> DetectedPhotoBarcode? in
-            guard let value = observation.payloadStringValue else { return nil }
-            return DetectedPhotoBarcode(
-              value: value,
-              detectedType: observation.symbology.rawValue
-            )
-          }
-
-          if observations.isEmpty {
-            continuation.resume(returning: .notFound)
-          } else {
-            continuation.resume(returning: .observations(observations))
-          }
-        } catch {
-          continuation.resume(returning: .failure(error.localizedDescription))
-        }
-      }
-    }
-  }
-
-  nonisolated func metadataOutput(
-    _: AVCaptureMetadataOutput,
-    didOutput metadataObjects: [AVMetadataObject],
-    from _: AVCaptureConnection
-  ) {
-    guard
-      let metadataObject = metadataObjects
-        .compactMap({ $0 as? AVMetadataMachineReadableCodeObject })
-        .first(where: { $0.stringValue != nil }),
-      let value = metadataObject.stringValue
-    else { return }
-    let detectedType = metadataObject.type.rawValue
-
-    Task { @MainActor [weak self] in
-      guard let self, !self.isProcessingCapture else { return }
-      self.handleDetectedCode(value, detectedType: detectedType)
-    }
-  }
-
-  nonisolated func photoOutput(
-    _: AVCapturePhotoOutput,
-    didFinishProcessingPhoto photo: AVCapturePhoto,
-    error: Error?
-  ) {
-    let imageData = photo.fileDataRepresentation()
-    let errorMessage = error?.localizedDescription
-
-    Task { @MainActor [weak self] in
-      self?.handlePhotoCaptureResult(imageData: imageData, errorMessage: errorMessage)
-    }
-  }
 }
