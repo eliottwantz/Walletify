@@ -12,7 +12,7 @@ ENV NODE_ENV=production
 
 RUN bun run build
 
-FROM alpine AS final
+FROM dhi.io/alpine-base:3.23 AS final
 
 WORKDIR /app
 
