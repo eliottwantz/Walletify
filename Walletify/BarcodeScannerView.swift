@@ -14,7 +14,7 @@ import VisionKit
 
 struct BarcodeScanResult: Sendable {
   let code: String
-  let detectedType: String
+  let detectedType: VNBarcodeSymbology
 }
 
 struct BarcodeScannerView: View {
@@ -302,7 +302,7 @@ private struct BarcodeDataScannerView: UIViewControllerRepresentable {
 
       return BarcodeScanResult(
         code: payload,
-        detectedType: barcode.observation.symbology.rawValue
+        detectedType: barcode.observation.symbology
       )
     }
   }

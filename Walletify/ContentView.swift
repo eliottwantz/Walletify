@@ -9,12 +9,13 @@
 import AVFoundation
 import PassKit
 import SwiftUI
+import Vision
 
 struct ContentView: View {
   @State private var companyName = ""
   @State private var websiteURL = ""
   @State private var codeValue = ""
-  @State private var detectedBarcodeType: String?
+  @State private var detectedBarcodeType: VNBarcodeSymbology?
   @State private var isScannerPresented = false
   @State private var isLoading = false
   @State private var addPass: WalletPassItem?
@@ -23,11 +24,6 @@ struct ContentView: View {
   @FocusState private var isKeyboardFocused: Bool
 
   private let passService = WalletPassService()
-//
-//  #if DEBUG
-//    @ObserveInjection var forceRedraw
-//  #endif
-
   var body: some View {
     NavigationStack {
       VStack {
@@ -54,7 +50,6 @@ struct ContentView: View {
             }
 
             LabeledContent("Code", value: codeValue)
-//              .font(.footnote.monospaced())
               .textSelection(.enabled)
               .foregroundStyle(codeValue.isEmpty ? .secondary : .primary)
             Button {
@@ -127,7 +122,6 @@ struct ContentView: View {
         Text(errorMessage ?? "Unknown error")
       }
     }
-//    .enableInjection()
   }
 
   private var isSaveDisabled: Bool {
@@ -147,7 +141,7 @@ struct ContentView: View {
       let pass = try await passService.createPass(
         companyName: companyName,
         codeValue: codeValue,
-        detectedType: detectedBarcodeType,
+        detectedType: detectedBarcodeType.rawValue,
         websiteURL: websiteURL
       )
       addPass = WalletPassItem(pass: pass)
@@ -164,53 +158,49 @@ private struct WalletPassItem: Identifiable {
 }
 
 extension BarcodeScanResult {
-  fileprivate static func displayName(for rawValue: String) -> String {
-    let normalizedType =
-      rawValue
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .components(separatedBy: ".")
-      .last ?? rawValue
-
-    switch normalizedType {
-    case "QR", "QRCode":
+  fileprivate static func displayName(for symbology: VNBarcodeSymbology) -> String {
+    switch symbology {
+    case .qr:
       return "QR Code"
-    case "MicroQR":
+    case .microQR:
       return "Micro QR"
-    case "Aztec":
+    case .aztec:
       return "Aztec"
-    case "PDF417":
+    case .pdf417:
       return "PDF417"
-    case "MicroPDF417":
+    case .microPDF417:
       return "MicroPDF417"
-    case "DataMatrix":
+    case .dataMatrix:
       return "Data Matrix"
-    case "EAN13":
+    case .ean13:
       return "EAN-13"
-    case "EAN8":
+    case .ean8:
       return "EAN-8"
-    case "UPCE":
+    case .upce:
       return "UPC-E"
-    case "Code39", "Code39Checksum", "Code39FullASCII", "Code39FullASCIIChecksum",
-      "Code39Mod43":
+    case .code39, .code39Checksum, .code39FullASCII, .code39FullASCIIChecksum:
       return "Code 39"
-    case "Code93", "Code93i":
+    case .code93, .code93i:
       return "Code 93"
-    case "Code128":
+    case .code128:
       return "Code 128"
-    case "Codabar":
+    case .codabar:
       return "Codabar"
-    case "ITF14":
+    case .itf14:
       return "ITF-14"
-    case "Interleaved2of5", "I2of5", "I2of5Checksum":
+    case .i2of5, .i2of5Checksum:
       return "Interleaved 2 of 5"
-    case "GS1DataBar":
+    case .gs1DataBar:
       return "GS1 DataBar"
-    case "GS1DataBarExpanded":
+    case .gs1DataBarExpanded:
       return "GS1 DataBar Expanded"
-    case "GS1DataBarLimited":
+    case .gs1DataBarLimited:
       return "GS1 DataBar Limited"
     default:
-      return normalizedType
+      let normalizedType = symbology.rawValue
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "VNBarcodeSymbology", with: "")
+      return normalizedType.isEmpty ? symbology.rawValue : normalizedType
     }
   }
 }
