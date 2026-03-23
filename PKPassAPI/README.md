@@ -4,8 +4,11 @@ Minimal Bun/Elysia backend for generating signed Apple Wallet passes for Walleti
 
 ## Endpoints
 
+- `GET /`
 - `GET /health`
 - `POST /pass`
+
+`GET /` renders a simple web page that lists Tuist previews for `develiott/Walletify`, paginated with install buttons that use the preview `device_url`.
 
 `POST /pass` body:
 
@@ -43,6 +46,7 @@ Required env values:
 - `ORGANIZATION_NAME`
 - `TEAM_IDENTIFIER`
 - `PASS_TYPE_IDENTIFIER`
+- `TUIST_TOKEN` (required for the preview index page on `/`)
 - `WWDR_CERT_PATH` or `WWDR_CERT_BASE64` or `WWDR_CERT_PEM`
 - `SIGNER_CERT_PATH` or `SIGNER_CERT_BASE64` or `SIGNER_CERT_PEM`
 - `SIGNER_KEY_PATH` or `SIGNER_KEY_BASE64` or `SIGNER_KEY_PEM`

@@ -3,12 +3,16 @@ cloudflared = "latest"
 
 [tasks.tunnel]
 run = "cloudflared tunnel run --token $(op read \"op://Personal/Cloudflare Tunnel Token/credential\")"
+description = "Start the Cloudflare tunnel to expose the local server to the internet."
 
 [tasks.dev]
 run = "varlock run -- bun run dev"
+description = "Start the development server with hot reloading."
 
 [tasks.start]
-run = "bun run build && varlock run -- ./server"
+run = "bun run build && varlock run -- ./dist/server"
+description = "Build the application and start the server."
 
 [tasks.debug]
 run = "varlock run -- bun run inspect"
+description = "Start the server with the debugger attached."
