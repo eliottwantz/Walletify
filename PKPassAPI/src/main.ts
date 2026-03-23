@@ -40,40 +40,6 @@ type RuntimeConfig = {
   };
 };
 
-type TuistPreview = {
-  id: string;
-  builds: Array<unknown>;
-  bundle_identifier?: string;
-  created_by?: {
-    handle: string;
-  };
-  created_from_ci: boolean;
-  device_url: string;
-  display_name?: string;
-  git_branch?: string;
-  git_commit_sha?: string;
-  icon_url: string;
-  inserted_at: string;
-  supported_platforms: string[];
-  track?: string;
-  url: string;
-  version?: string;
-};
-
-type TuistPaginationMetadata = {
-  current_page?: number | null;
-  has_next_page: boolean;
-  has_previous_page: boolean;
-  page_size: number;
-  total_count: number;
-  total_pages?: number | null;
-};
-
-type TuistPreviewsResponse = {
-  pagination_metadata: TuistPaginationMetadata;
-  previews: TuistPreview[];
-};
-
 type WalletBarcodeFormat =
   | "PKBarcodeFormatAztec"
   | "PKBarcodeFormatCode128"
@@ -175,7 +141,16 @@ const passRequestSchema = z.object({
 });
 
 const tuistPreviewSchema = z.object({
-  builds: z.array(z.unknown()),
+  builds: z.array(
+    z.object({
+      binary_id: z.string().optional(),
+      id: z.string(),
+      supported_platforms: z.array(z.string()),
+      type: z.enum(["app_bundle", "ipa", "apk"]),
+      url: z.string(),
+      build_version: z.string(),
+    }),
+  ),
   bundle_identifier: z.string().optional(),
   created_by: z
     .object({
@@ -195,18 +170,23 @@ const tuistPreviewSchema = z.object({
   url: z.string(),
   version: z.string().optional(),
 });
+type TuistPreview = z.infer<typeof tuistPreviewSchema>;
+
+const tuistPaginationMetadata = z.object({
+  current_page: z.number().nullable().optional(),
+  has_next_page: z.boolean(),
+  has_previous_page: z.boolean(),
+  page_size: z.number(),
+  total_count: z.number(),
+  total_pages: z.number().nullable().optional(),
+});
+type TuistPaginationMetadata = z.infer<typeof tuistPaginationMetadata>;
 
 const tuistPreviewsResponseSchema = z.object({
-  pagination_metadata: z.object({
-    current_page: z.number().nullable().optional(),
-    has_next_page: z.boolean(),
-    has_previous_page: z.boolean(),
-    page_size: z.number(),
-    total_count: z.number(),
-    total_pages: z.number().nullable().optional(),
-  }),
+  pagination_metadata: tuistPaginationMetadata,
   previews: z.array(tuistPreviewSchema),
 });
+type TuistPreviewsResponse = z.infer<typeof tuistPreviewsResponseSchema>;
 
 type PassRequest = z.infer<typeof passRequestSchema>;
 
@@ -344,9 +324,7 @@ async function fetchTuistPreviews({
 
   if (!response.ok) {
     const failureMessage = await readTuistErrorMessage(response);
-    throw new RequestError(
-      `Tuist previews request failed (${response.status}): ${failureMessage}`,
-    );
+    throw new RequestError(`Tuist previews request failed (${response.status}): ${failureMessage}`);
   }
 
   const payload = await response.json();
@@ -390,7 +368,8 @@ function renderIndexPage({
   previews: TuistPreview[];
 }): string {
   const currentPage = pagination.current_page ?? page;
-  const totalPages = pagination.total_pages ?? Math.max(1, Math.ceil(pagination.total_count / pagination.page_size));
+  const totalPages =
+    pagination.total_pages ?? Math.max(1, Math.ceil(pagination.total_count / pagination.page_size));
   const hasPreviews = previews.length > 0;
 
   const previewCards = hasPreviews
@@ -778,6 +757,7 @@ function renderIndexPage({
 function renderPreviewCard(preview: TuistPreview): string {
   const title = preview.display_name || preview.bundle_identifier || "Untitled preview";
   const version = preview.version || "Unknown version";
+  const buildVersion = preview.builds.at(0)?.build_version || "-";
   const branch = preview.git_branch || "No branch";
   const shortCommit = preview.git_commit_sha ? preview.git_commit_sha.slice(0, 7) : "-";
   const uploader = preview.created_by?.handle || (preview.created_from_ci ? "CI" : "Unknown");
@@ -809,6 +789,10 @@ function renderPreviewCard(preview: TuistPreview): string {
         <div class="meta-item">
           <dt>Bundle ID</dt>
           <dd>${escapeHtml(preview.bundle_identifier || "-")}</dd>
+        </div>
+        <div class="meta-item">
+          <dt>Build</dt>
+          <dd>${escapeHtml(buildVersion)}</dd>
         </div>
         <div class="meta-item">
           <dt>Branch</dt>
@@ -1175,7 +1159,7 @@ async function renderStripBarcode({
   try {
     return await toBuffer({
       ...STRIP_RENDER_CONFIG,
-      ...(encoderOptions ?? {}),
+      ...encoderOptions,
       bcid,
       scaleX: scale,
       scaleY: scale,
