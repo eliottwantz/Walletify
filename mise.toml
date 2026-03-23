@@ -11,7 +11,7 @@ run = ["echo 'Starting archive process...'", """xcodebuild \
     -configuration Release \
     -destination 'generic/platform=iOS' \
     -archivePath .archives/Walletify \
-    archive""", "tuist inspect build", "echo 'Done with archive process!'"]
+    archive | xcbeautify""", "echo 'Done with archive process!'"]
 description = "Creates an archive of the app for distribution"
 sources = ["Walletify/**/*", "Walletify.xcodeproj/**/*", "ExportOptions.plist", "Tuist.swift"]
 outputs = [".archives/Walletify.xcarchive"]
