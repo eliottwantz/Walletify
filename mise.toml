@@ -21,7 +21,7 @@ depends = ["archive"]
 [tasks.release]
 run = "tuist share .archives/export/Walletify.ipa"
 description = "Creates a Tuist preview for the latest release build"
-depends = ["create_ipa"]
+depends = ["create-ipa"]
 
 [tasks."tuist:web"]
 run = "tuist project show --web"

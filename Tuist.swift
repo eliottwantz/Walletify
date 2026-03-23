@@ -1,3 +1,3 @@
 import ProjectDescription
 
-let tuist = Tuist(fullHandle: "eliottwantz/Walletify", project: .xcode())
+let tuist = Tuist(fullHandle: "develiott/Walletify", project: .xcode())
