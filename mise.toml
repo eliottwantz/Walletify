@@ -1,6 +1,9 @@
 [tools]
 tuist = "latest"
 
+[env]
+SENTRY_DISABLED = "true"
+
 [tasks.build]
 run = "tuist xcodebuild build -scheme Walletify -project Walletify.xcodeproj -configuration Release -destination 'generic/platform=iOS'"
 description = "Builds the app in release mode"
