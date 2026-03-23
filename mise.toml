@@ -5,8 +5,16 @@ tuist = "latest"
 SENTRY_DISABLED = "true"
 
 [tasks.archive]
-run = "tuist xcodebuild build -project Walletify.xcodeproj -scheme 'Walletify Release' -configuration Release -destination 'generic/platform=iOS' -archivePath .archives/Walletify clean archive"
+run = ["""tuist xcodebuild \
+-project Walletify.xcodeproj \
+-scheme 'Walletify Release' \
+-configuration Release \
+-destination 'generic/platform=iOS' \
+-archivePath .archives/Walletify \
+clean archive""", "tuist inspect bundle .archives/Walletify.xcarchive"]
 description = "Creates an archive of the app for distribution"
+sources = ["Walletify/**/*", "Walletify.xcodeproj/**/*", "ExportOptions.plist", "Tuist.swift"]
+outputs = [".archives/Walletify.xcarchive"]
 
 [tasks.create-ipa]
 run = """xcodebuild \
@@ -17,6 +25,7 @@ run = """xcodebuild \
 """
 description = "Creates an IPA file from the archive for distribution"
 depends = ["archive"]
+outputs = [".archives/export/**/*"]
 
 [tasks.release]
 run = "tuist share .archives/export/Walletify.ipa"
